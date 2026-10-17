@@ -5,12 +5,17 @@ jest.mock('@nestjs/typeorm', () => ({
 import { ConflictException } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { AdminProblemsController } from './controllers/problems.controller';
+import { ProblemMetadata } from '../database/entities/problem-metadata.entity';
+import { ProblemStatement } from '../database/entities/problem-statement.entity';
+import { ProblemConfig } from '../database/entities/problem-config.entity';
+import { ProblemTestCase } from '../database/entities/problem-testcase.entity';
 
 describe('Practice problem authoring', () => {
   const repository = () => ({
     create: jest.fn((data) => ({ id: 'new-record', ...data })),
     save: jest.fn((data) => Promise.resolve(data)),
     findOne: jest.fn().mockResolvedValue(null),
+    manager: { transaction: jest.fn() },
   });
   let problems: ReturnType<typeof repository>;
   let statements: ReturnType<typeof repository>;
@@ -26,6 +31,15 @@ describe('Practice problem authoring', () => {
     configs = repository();
     tests = repository();
     questions = repository();
+    const repositories = new Map<unknown, ReturnType<typeof repository>>([
+      [ProblemMetadata, problems],
+      [ProblemStatement, statements],
+      [ProblemConfig, configs],
+      [ProblemTestCase, tests],
+    ]);
+    problems.manager.transaction.mockImplementation(async (work) =>
+      work({ getRepository: (entity: unknown) => repositories.get(entity) }),
+    );
     cache = { invalidatePrefix: jest.fn().mockResolvedValue(undefined) };
     service = new AdminService(
       {} as never,
@@ -90,6 +104,27 @@ describe('Practice problem authoring', () => {
       expect.objectContaining({ samples: payload.sampleExamples }),
     );
     expect(questions.save).not.toHaveBeenCalled();
+    expect(problems.manager.transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects the whole create transaction when configuration cannot be saved', async () => {
+    const failure = new Error('configuration write failed');
+    configs.save.mockRejectedValueOnce(failure);
+    await expect(service.createProblem({
+      metadata: { title: 'Retryable problem', slug: 'retryable-problem' },
+      statement: { description: 'Add two integers' },
+    })).rejects.toBe(failure);
+    expect(problems.manager.transaction).toHaveBeenCalledTimes(1);
+    expect(tests.save).not.toHaveBeenCalled();
+    expect(cache.invalidatePrefix).not.toHaveBeenCalled();
+  });
+
+  it('does not publish a successful response or invalidate cache when commit fails', async () => {
+    problems.manager.transaction.mockRejectedValueOnce(new Error('commit failed'));
+    await expect(service.createProblem({
+      metadata: { slug: 'commit-failed' },
+    })).rejects.toThrow('commit failed');
+    expect(cache.invalidatePrefix).not.toHaveBeenCalled();
   });
 
   it('persists only a changed default language while retaining reference and execution settings', async () => {

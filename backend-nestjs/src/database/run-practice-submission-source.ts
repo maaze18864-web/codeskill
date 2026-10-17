@@ -12,7 +12,6 @@ import { validateShardingState } from './sharding/sharding-state';
 import { applyContestSecurityReattemptMigration } from './migrations/contest-security-reattempt';
 import { applyAssessmentAudienceTargetingMigration } from './migrations/assessment-audience-targeting';
 import { applyAssessmentProctorCapturesMigration } from './migrations/assessment-proctor-captures';
-import { applyPracticeProblemConfigMigration } from './migrations/practice-problem-config';
 
 export function practiceSubmissionMigrationOptions(): DataSourceOptions {
   const postgres = databaseConfig().postgres;
@@ -49,7 +48,6 @@ export async function runPracticeSubmissionSourceMigration(): Promise<void> {
       try {
         // Serialize schema changes when an ASG starts several instances at once.
         await queryRunner.query('SELECT pg_advisory_xact_lock(1902230159)');
-        await applyPracticeProblemConfigMigration(queryRunner);
         const sharding = await readShardingState(queryRunner);
         if (sharding)
           validateShardingState(parseSubmissionShardingConfig(), sharding);

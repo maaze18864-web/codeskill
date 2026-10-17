@@ -914,62 +914,58 @@ export class AdminService {
           ? 'Draft'
           : 'Draft');
 
-    const problem = await this.problemModel.manager.transaction(async (manager) => {
-      const problems = manager.getRepository(ProblemMetadata);
-      const statements = manager.getRepository(ProblemStatement);
-      const configs = manager.getRepository(ProblemConfig);
-      const tests = manager.getRepository(ProblemTestCase);
+    const newProblem = this.problemModel.create({
+      ...metadata,
+      visibility,
+      author_id: userId || null,
+    } as any) as unknown as ProblemMetadata;
+    await this.problemModel.save(newProblem);
 
-      const newProblem = problems.create({
-        ...metadata,
-        visibility,
-        author_id: userId || null,
-      } as any) as unknown as ProblemMetadata;
-      await problems.save(newProblem);
+    const newStatement = this.statementModel.create({
+      metadata_id: newProblem.id,
+      ...statement,
+      samples: sampleExamples || [],
+    } as any) as unknown as ProblemStatement;
 
-      const newStatement = statements.create({
-        metadata_id: newProblem.id,
-        ...statement,
-        samples: sampleExamples || [],
-      } as any) as unknown as ProblemStatement;
+    const newConfig = this.configModel.create({
+      metadata_id: newProblem.id,
+      supportedLanguages: languages || [],
+      timeLimit: execution?.timeLimit || 2000,
+      memoryLimit: execution?.memoryLimit || 256,
+      cpuLimit: execution?.cpuLimit || 1,
+      executionMode: execution?.executionMode || 'standard',
+      functionSignature: execution?.functionSignature,
+      exactOutput: execution?.exactOutput === true,
+      defaultLanguage: payload.defaultLanguage || null,
+      starterCode: starterCode || {},
+      referenceSolution: referenceSolution || {},
+      hasCustomChecker: customChecker?.hasCustomChecker || false,
+      customCheckerCode: customChecker?.customCheckerCode || {},
+    } as any) as unknown as ProblemConfig;
 
-      const newConfig = configs.create({
-        metadata_id: newProblem.id,
-        supportedLanguages: languages || [],
-        timeLimit: execution?.timeLimit || 2000,
-        memoryLimit: execution?.memoryLimit || 256,
-        cpuLimit: execution?.cpuLimit || 1,
-        executionMode: execution?.executionMode || 'standard',
-        functionSignature: execution?.functionSignature,
-        exactOutput: execution?.exactOutput === true,
-        defaultLanguage: payload.defaultLanguage || null,
-        starterCode: starterCode || {},
-        referenceSolution: referenceSolution || {},
-        hasCustomChecker: customChecker?.hasCustomChecker || false,
-        customCheckerCode: customChecker?.customCheckerCode || {},
-      } as any) as unknown as ProblemConfig;
+    const newTestCase = this.testCaseModel.create({
+      metadata_id: newProblem.id,
+      cases: testCases?.cases || [],
+    } as any) as unknown as ProblemTestCase;
 
-      const newTestCase = tests.create({
-        metadata_id: newProblem.id,
-        cases: testCases?.cases || [],
-      } as any) as unknown as ProblemTestCase;
+    await Promise.all([
+      this.statementModel.save(newStatement),
+      this.configModel.save(newConfig),
+      this.testCaseModel.save(newTestCase),
+    ]);
 
-      // One connection owns the transaction; complete every save before commit.
-      await statements.save(newStatement);
-      await configs.save(newConfig);
-      await tests.save(newTestCase);
+    await this.cacheService.invalidatePrefix('problems:');
 
-      return {
+    return {
+      success: true,
+      problem: {
         ...newProblem,
         _id: newProblem.id,
         statement: newStatement,
         config: newConfig,
         testCases: newTestCase,
-      };
-    });
-
-    await this.cacheService.invalidatePrefix('problems:');
-    return { success: true, problem };
+      },
+    };
   }
 
   async updateProblem(id: string, payload: any) {

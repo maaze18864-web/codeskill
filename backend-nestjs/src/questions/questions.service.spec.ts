@@ -1,5 +1,5 @@
 jest.mock('@nestjs/typeorm', () => ({
-  InjectRepository: () => () => {},
+  InjectRepository: () => () => { },
 }));
 
 import { BadRequestException } from '@nestjs/common';
@@ -530,6 +530,5 @@ describe('QuestionsService - True/False Questions Handling', () => {
       await expect(service.bulkUpdate([], {}, mockAdminUser)).rejects.toThrow(BadRequestException);
     });
   });
-
 });
-
+///kh

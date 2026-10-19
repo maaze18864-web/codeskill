@@ -531,4 +531,3 @@ describe('QuestionsService - True/False Questions Handling', () => {
     });
   });
 });
-///kh

@@ -504,9 +504,11 @@ export function ContributionSkyline({
     return (c.count ? nf.format(c.count) + " " + noun(c.count) : "No " + plural) + " on " + dfl.format(dayMs(c.date))
   }
 
-  // Everything the render loop reads, refreshed every render so the loop never closes over stale props.
+  // Everything the render loop reads, refreshed every commit so the loop never closes over stale props (React 19 pure render).
   const cfg = React.useRef({ model, duration, heightScale, orbit, palette, legendLevel, onCellClick, target: view === "3d" ? 1 : 0, setActive, setWidth, setTheme, setAnnounce, describe })
-  cfg.current = { model, duration, heightScale, orbit, palette, legendLevel, onCellClick, target: view === "3d" ? 1 : 0, setActive, setWidth, setTheme, setAnnounce, describe }
+  React.useEffect(() => {
+    cfg.current = { model, duration, heightScale, orbit, palette, legendLevel, onCellClick, target: view === "3d" ? 1 : 0, setActive, setWidth, setTheme, setAnnounce, describe }
+  })
 
   React.useEffect(() => {
     const root = rootRef.current

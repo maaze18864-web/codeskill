@@ -101,45 +101,48 @@ export class DiscussionsService {
   }
 
   async voteThread(userId: string, threadId: string, direction: 'up' | 'down') {
-    const thread = await this.discussionRepo.findOne({
-      where: [{ id: threadId }, { mongoId: threadId }],
-    });
-    if (!thread) throw new NotFoundException('Thread not found');
+    return this.discussionRepo.manager.transaction(async (manager) => {
+      const thread = await manager.findOne(Discussion, {
+        where: [{ id: threadId }, { mongoId: threadId }],
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!thread) throw new NotFoundException('Thread not found');
 
-    const upvotedBy = Array.isArray(thread.upvotedBy) ? [...thread.upvotedBy] : [];
-    const downvotedBy = Array.isArray(thread.downvotedBy) ? [...thread.downvotedBy] : [];
+      const upvotedBy = Array.isArray(thread.upvotedBy) ? [...thread.upvotedBy] : [];
+      const downvotedBy = Array.isArray(thread.downvotedBy) ? [...thread.downvotedBy] : [];
 
-    const alreadyUpvoted = upvotedBy.includes(userId);
-    const alreadyDownvoted = downvotedBy.includes(userId);
+      const alreadyUpvoted = upvotedBy.includes(userId);
+      const alreadyDownvoted = downvotedBy.includes(userId);
 
-    if (direction === 'up') {
-      if (alreadyUpvoted) {
-        thread.upvotedBy = upvotedBy.filter((id) => id !== userId);
-        thread.upvotes = Math.max(0, (thread.upvotes || 0) - 1);
+      if (direction === 'up') {
+        if (alreadyUpvoted) {
+          thread.upvotedBy = upvotedBy.filter((id) => id !== userId);
+          thread.upvotes = Math.max(0, (thread.upvotes || 0) - 1);
+        } else {
+          if (alreadyDownvoted) {
+            thread.downvotedBy = downvotedBy.filter((id) => id !== userId);
+            thread.downvotes = Math.max(0, (thread.downvotes || 0) - 1);
+          }
+          thread.upvotedBy = [...upvotedBy, userId];
+          thread.upvotes = (thread.upvotes || 0) + 1;
+        }
       } else {
         if (alreadyDownvoted) {
           thread.downvotedBy = downvotedBy.filter((id) => id !== userId);
           thread.downvotes = Math.max(0, (thread.downvotes || 0) - 1);
+        } else {
+          if (alreadyUpvoted) {
+            thread.upvotedBy = upvotedBy.filter((id) => id !== userId);
+            thread.upvotes = Math.max(0, (thread.upvotes || 0) - 1);
+          }
+          thread.downvotedBy = [...downvotedBy, userId];
+          thread.downvotes = (thread.downvotes || 0) + 1;
         }
-        thread.upvotedBy = [...upvotedBy, userId];
-        thread.upvotes = (thread.upvotes || 0) + 1;
       }
-    } else {
-      if (alreadyDownvoted) {
-        thread.downvotedBy = downvotedBy.filter((id) => id !== userId);
-        thread.downvotes = Math.max(0, (thread.downvotes || 0) - 1);
-      } else {
-        if (alreadyUpvoted) {
-          thread.upvotedBy = upvotedBy.filter((id) => id !== userId);
-          thread.upvotes = Math.max(0, (thread.upvotes || 0) - 1);
-        }
-        thread.downvotedBy = [...downvotedBy, userId];
-        thread.downvotes = (thread.downvotes || 0) + 1;
-      }
-    }
 
-    await this.discussionRepo.save(thread);
-    return { upvotes: thread.upvotes, downvotes: thread.downvotes };
+      await manager.save(thread);
+      return { upvotes: thread.upvotes, downvotes: thread.downvotes };
+    });
   }
 
   // ── Replies ──────────────────────────────────────────────────────────────
@@ -176,8 +179,7 @@ export class DiscussionsService {
     });
     await this.replyRepo.save(reply);
 
-    thread.replyCount = (thread.replyCount || 0) + 1;
-    await this.discussionRepo.save(thread);
+    await this.discussionRepo.increment({ id: thread.id }, 'replyCount', 1);
 
     const saved = await this.replyRepo.findOne({
       where: { id: reply.id },
@@ -197,11 +199,7 @@ export class DiscussionsService {
     }
 
     if (reply.discussion) {
-      const thread = await this.discussionRepo.findOne({ where: { id: reply.discussion.id } });
-      if (thread) {
-        thread.replyCount = Math.max(0, (thread.replyCount || 1) - 1);
-        await this.discussionRepo.save(thread);
-      }
+      await this.discussionRepo.decrement({ id: reply.discussion.id }, 'replyCount', 1);
     }
 
     await this.replyRepo.delete(replyId);
@@ -209,42 +207,47 @@ export class DiscussionsService {
   }
 
   async voteReply(userId: string, replyId: string, direction: 'up' | 'down') {
-    const reply = await this.replyRepo.findOne({ where: { id: replyId } });
-    if (!reply) throw new NotFoundException('Reply not found');
+    return this.replyRepo.manager.transaction(async (manager) => {
+      const reply = await manager.findOne(DiscussionReply, {
+        where: [{ id: replyId }],
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!reply) throw new NotFoundException('Reply not found');
 
-    const upvotedBy = Array.isArray(reply.upvotedBy) ? [...reply.upvotedBy] : [];
-    const downvotedBy = Array.isArray(reply.downvotedBy) ? [...reply.downvotedBy] : [];
+      const upvotedBy = Array.isArray(reply.upvotedBy) ? [...reply.upvotedBy] : [];
+      const downvotedBy = Array.isArray(reply.downvotedBy) ? [...reply.downvotedBy] : [];
 
-    const alreadyUpvoted = upvotedBy.includes(userId);
-    const alreadyDownvoted = downvotedBy.includes(userId);
+      const alreadyUpvoted = upvotedBy.includes(userId);
+      const alreadyDownvoted = downvotedBy.includes(userId);
 
-    if (direction === 'up') {
-      if (alreadyUpvoted) {
-        reply.upvotedBy = upvotedBy.filter((id) => id !== userId);
-        reply.upvotes = Math.max(0, (reply.upvotes || 0) - 1);
+      if (direction === 'up') {
+        if (alreadyUpvoted) {
+          reply.upvotedBy = upvotedBy.filter((id) => id !== userId);
+          reply.upvotes = Math.max(0, (reply.upvotes || 0) - 1);
+        } else {
+          if (alreadyDownvoted) {
+            reply.downvotedBy = downvotedBy.filter((id) => id !== userId);
+            reply.downvotes = Math.max(0, (reply.downvotes || 0) - 1);
+          }
+          reply.upvotedBy = [...upvotedBy, userId];
+          reply.upvotes = (reply.upvotes || 0) + 1;
+        }
       } else {
         if (alreadyDownvoted) {
           reply.downvotedBy = downvotedBy.filter((id) => id !== userId);
           reply.downvotes = Math.max(0, (reply.downvotes || 0) - 1);
+        } else {
+          if (alreadyUpvoted) {
+            reply.upvotedBy = upvotedBy.filter((id) => id !== userId);
+            reply.upvotes = Math.max(0, (reply.upvotes || 0) - 1);
+          }
+          reply.downvotedBy = [...downvotedBy, userId];
+          reply.downvotes = (reply.downvotes || 0) + 1;
         }
-        reply.upvotedBy = [...upvotedBy, userId];
-        reply.upvotes = (reply.upvotes || 0) + 1;
       }
-    } else {
-      if (alreadyDownvoted) {
-        reply.downvotedBy = downvotedBy.filter((id) => id !== userId);
-        reply.downvotes = Math.max(0, (reply.downvotes || 0) - 1);
-      } else {
-        if (alreadyUpvoted) {
-          reply.upvotedBy = upvotedBy.filter((id) => id !== userId);
-          reply.upvotes = Math.max(0, (reply.upvotes || 0) - 1);
-        }
-        reply.downvotedBy = [...downvotedBy, userId];
-        reply.downvotes = (reply.downvotes || 0) + 1;
-      }
-    }
 
-    await this.replyRepo.save(reply);
-    return { upvotes: reply.upvotes, downvotes: reply.downvotes };
+      await manager.save(reply);
+      return { upvotes: reply.upvotes, downvotes: reply.downvotes };
+    });
   }
 }

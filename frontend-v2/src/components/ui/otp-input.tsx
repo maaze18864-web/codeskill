@@ -95,21 +95,34 @@ export function useOtpInput({
   const [focusedIndex, setFocusedIndex] = useState(-1);
 
   const charsRef = useRef(chars);
-  charsRef.current = chars;
-
   const refs = useRef<(HTMLInputElement | null)[]>([]);
-
   const changed = useRef(onChange);
-  changed.current = onChange;
   const completed = useRef(onComplete);
-  completed.current = onComplete;
 
   useEffect(() => {
+    charsRef.current = chars;
+  }, [chars]);
+
+  useEffect(() => {
+    changed.current = onChange;
+  }, [onChange]);
+
+  useEffect(() => {
+    completed.current = onComplete;
+  }, [onComplete]);
+
+  // Synchronously adjust state during render when prop length changes to eliminate cascaded effect re-renders
+  const [prevLength, setPrevLength] = useState(length);
+  if (prevLength !== length) {
+    setPrevLength(length);
     setChars((prev) =>
       prev.length === length
         ? prev
         : Array.from({ length }, (_, i) => prev[i] ?? ""),
     );
+  }
+
+  useEffect(() => {
     refs.current.length = length;
   }, [length]);
 

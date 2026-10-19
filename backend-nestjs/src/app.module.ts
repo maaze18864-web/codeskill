@@ -52,6 +52,7 @@ import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ExamSecurityModule } from './exam-security/exam-security.module';
 import { ObservabilityModule } from './observability/observability.module';
+import { BugsModule } from './bugs/bugs.module';
 
 @Module({
   imports: [
@@ -144,6 +145,7 @@ import { ObservabilityModule } from './observability/observability.module';
     ObservabilityModule,
     AnalyticsModule,
     ReportsModule,
+    BugsModule,
     PetModule,
     ThrottlerModule.forRootAsync({
       imports: [ConfigModule, RedisModule],

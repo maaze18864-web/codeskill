@@ -184,6 +184,11 @@ export class SandboxTelemetryService implements OnModuleInit, OnModuleDestroy {
    * 3. Passively polls Judge0 /about or /queues every 15s if JUDGE0_URL is configured
    */
   private startJudge0QueuePoller(): void {
+    const provider = process.env.CODE_EXECUTION_PROVIDER;
+    if (provider && provider !== 'judge0') {
+      return;
+    }
+
     const judge0BaseUrl = process.env.JUDGE0_URL || process.env.JUDGE0_BASE_URL;
     if (!judge0BaseUrl) return;
 
@@ -216,6 +221,10 @@ export class SandboxTelemetryService implements OnModuleInit, OnModuleDestroy {
   }
 
   detectEngine(hostOrOrigin: string, path: string): 'piston' | 'judge0' | null {
+    if (path.includes('/workers')) {
+      return null;
+    }
+
     const target = `${hostOrOrigin}${path}`.toLowerCase();
     if (
       target.includes('piston') ||

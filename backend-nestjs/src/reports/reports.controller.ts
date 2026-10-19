@@ -9,7 +9,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, In } from 'typeorm';
 import { AssessmentAttempt } from '../database/entities/assessment-attempt.entity';
 import { Assessment } from '../database/entities/assessment.entity';
 import { Question } from '../database/entities/question.entity';
@@ -76,31 +76,46 @@ export class ReportsController {
       throw new NotFoundException('Assessment not found');
     }
 
-    // Populate question details for responses
+    // Populate question details for responses in a single batched query (eliminates N+1)
     const responses = Array.isArray(attempt.responses) ? attempt.responses : [];
-    const questions = await Promise.all(
-      responses.map(async (resp: any) => {
-        const q = resp.questionId
-          ? await this.questionRepo.findOne({
-              where: [{ id: resp.questionId }, { mongoId: resp.questionId }],
-            })
-          : null;
-        const item: {
-          id: string;
-          title: string;
-          difficulty: string;
-          status: 'Passed' | 'Failed' | 'Partial';
-          points: number;
-        } = {
-          id: String(resp.questionId || 'unknown'),
-          title: q?.title ? q.title : 'Assessment Question',
-          difficulty: q?.difficulty ? q.difficulty : 'Medium',
-          status: resp.isCorrect ? 'Passed' : resp.marksAwarded > 0 ? 'Partial' : 'Failed',
-          points: Number(resp.marksAwarded || 0),
-        };
-        return item;
-      }),
+    const questionIds = Array.from(
+      new Set(
+        responses
+          .map((r: any) => r.questionId)
+          .filter((id): id is string => typeof id === 'string' && id.trim().length > 0),
+      ),
     );
+
+    const questionsList =
+      questionIds.length > 0
+        ? await this.questionRepo.find({
+            where: [{ id: In(questionIds) }, { mongoId: In(questionIds) }],
+          })
+        : [];
+
+    const questionMap = new Map<string, Question>();
+    for (const q of questionsList) {
+      if (q.id) questionMap.set(q.id, q);
+      if (q.mongoId) questionMap.set(q.mongoId, q);
+    }
+
+    const questions = responses.map((resp: any) => {
+      const q = resp.questionId ? questionMap.get(resp.questionId) || null : null;
+      const item: {
+        id: string;
+        title: string;
+        difficulty: string;
+        status: 'Passed' | 'Failed' | 'Partial';
+        points: number;
+      } = {
+        id: String(resp.questionId || 'unknown'),
+        title: q?.title ? q.title : 'Assessment Question',
+        difficulty: q?.difficulty ? q.difficulty : 'Medium',
+        status: resp.isCorrect ? 'Passed' : resp.marksAwarded > 0 ? 'Partial' : 'Failed',
+        points: Number(resp.marksAwarded || 0),
+      };
+      return item;
+    });
 
     const resultData: StudentResult = {
       studentName: attempt.studentName || 'Unknown Student',

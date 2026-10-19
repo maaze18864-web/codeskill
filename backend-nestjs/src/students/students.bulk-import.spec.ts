@@ -229,4 +229,37 @@ describe('Students Bulk Import & Validation', () => {
     expect(result.generatedPassword).not.toBe('12345678');
     expect(result.generatedPassword.length).toBeGreaterThanOrEqual(12);
   });
+
+  it('rejects batch import exceeding 500 rows to prevent threadpool starvation (ISSUE-PRF-002)', async () => {
+    const hugeBatch = Array.from({ length: 501 }, (_, i) => ({
+      uid: `UID_${i}`,
+      name: `Student ${i}`,
+      email: `student${i}@test.com`,
+    }));
+
+    await expect(service.confirmImport(hugeBatch, admin)).rejects.toThrow(
+      'exceeds maximum allowed limit of 500',
+    );
+  });
+
+  it('sanitizes malicious prototype pollution keys in spreadsheets (ISSUE-SEC-005)', async () => {
+    const maliciousRow = {
+      uid: 'CU_SEC_1',
+      name: 'Security Test',
+      email: 'sec@test.com',
+      batch: '2022-2026',
+      year: 2026,
+      semester: 6,
+      __proto__: { polluted: true },
+      constructor: { prototype: { admin: true } },
+    };
+
+    const buffer = createWorkbookBuffer([maliciousRow]);
+    const result = await service.parseAndValidateImport(buffer);
+
+    expect(result.valid).toBe(1);
+    expect((Object.prototype as any).polluted).toBeUndefined();
+    expect((Object.prototype as any).admin).toBeUndefined();
+    expect(result.validRows[0].__proto__).not.toEqual({ polluted: true });
+  });
 });

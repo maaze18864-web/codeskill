@@ -891,7 +891,16 @@ export class QuestionsService {
   }
 
   async parseAndValidateQuestionsImport(fileBuffer: Buffer) {
-    const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
+    const workbook = XLSX.read(fileBuffer, {
+      type: 'buffer',
+      cellFormula: false,
+      cellHTML: false,
+      cellNF: false,
+      cellStyles: false,
+      sheetStubs: false,
+      raw: true,
+      dense: true,
+    });
     const firstSheetName = workbook.SheetNames[0];
     if (!firstSheetName) {
       throw new BadRequestException(
@@ -900,13 +909,30 @@ export class QuestionsService {
     }
 
     const worksheet = workbook.Sheets[firstSheetName];
-    const rawRows: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+    const rawParsed: any[] = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
 
-    if (!rawRows || rawRows.length === 0) {
+    if (!rawParsed || rawParsed.length === 0) {
       throw new BadRequestException(
         'The uploaded spreadsheet contains no data rows.',
       );
     }
+
+    // Sanitize rows against Prototype Pollution (CVE-2023-30533, CVE-2024-22363)
+    const rawRows = rawParsed.map((row) => {
+      const clean: Record<string, any> = {};
+      for (const [key, val] of Object.entries(row)) {
+        const lowerKey = key.trim().toLowerCase();
+        if (
+          lowerKey === '__proto__' ||
+          lowerKey === 'constructor' ||
+          lowerKey === 'prototype'
+        ) {
+          continue;
+        }
+        clean[key] = val;
+      }
+      return clean;
+    });
 
     const normalizeHeader = (str: string) =>
       str.toLowerCase().replace(/[\s\-_.]/g, '');

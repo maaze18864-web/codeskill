@@ -31,13 +31,15 @@
     "test:shards:integration": "ts-node test/submission-sharding.integration.ts",
     "test:judges:integration": "ts-node test/judge-resilience.integration.ts",
     "test:judges:live": "ts-node test/judges-live.integration.ts",
-    "test:feedback:integration": "ts-node test/submission-feedback.integration.ts"
+    "test:feedback:integration": "ts-node test/submission-feedback.integration.ts",
+    "db:bugs:migrate": "ts-node -r tsconfig-paths/register src/database/run-bug-reports-migration.ts"
   },
   "dependencies": {
     "@apollo/server": "^5.5.1",
     "@as-integrations/express5": "^1.1.2",
     "@aws-sdk/client-s3": "^3.1085.0",
     "@aws-sdk/client-ses": "^3.1085.0",
+    "@aws-sdk/s3-request-presigner": "^3.1152.0",
     "@axiomhq/pino": "^2.0.0",
     "@nestjs/apollo": "^13.4.5",
     "@nestjs/bullmq": "^11.0.4",

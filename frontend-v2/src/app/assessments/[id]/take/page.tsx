@@ -42,6 +42,7 @@ import { CodeSnippet } from "@/components/assessment/CodeSnippet";
 import {
   checkAssessmentFace,
   getAssessmentFaceReference,
+  clearAssessmentFaceReference,
   type AssessmentFaceCheck,
 } from "@/lib/assessment-face-verification";
 
@@ -133,7 +134,6 @@ export default function TakeAssessmentPage({
   const submissionRequestedRef = useRef(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isAutoSubmitting, setIsAutoSubmitting] = useState(false);
-  const [snapshotStatus, setSnapshotStatus] = useState("First snapshot is captured after 20 seconds; S3 storage is confirmed per capture");
   const [assessmentTitle, setAssessmentTitle] = useState("Proctored Assessment");
   const [assessmentCode, setAssessmentCode] = useState("");
   const [startError, setStartError] = useState<string | null>(null);
@@ -409,9 +409,11 @@ export default function TakeAssessmentPage({
           } catch (error: any) {
             lastError = error;
             const status = error?.response?.status;
-            const transient = !status || status === 429 || status >= 500;
+            // 409 Conflict indicates the submission is actively evaluating. Treat as transient with backoff retry!
+            const transient = !status || status === 409 || status === 429 || status >= 500;
             if (!transient || retry === 2) break;
-            await new Promise((resolve) => window.setTimeout(resolve, 750 * (retry + 1)));
+            const delay = status === 409 ? 1500 * (retry + 1) : 750 * (retry + 1);
+            await new Promise((resolve) => window.setTimeout(resolve, delay));
           }
         }
         if (lastError) throw lastError;
@@ -426,6 +428,7 @@ export default function TakeAssessmentPage({
       // Release a preflight stream that was handed off but not adopted by the
       // exam media hook (for example, after a quick route transition).
       releaseAssessmentStream(id);
+      clearAssessmentFaceReference(id);
       if (isAuto) {
         await new Promise((resolve) => window.setTimeout(resolve, 2500));
       }
@@ -585,9 +588,6 @@ export default function TakeAssessmentPage({
               throw new Error("The server did not confirm that this snapshot was saved to S3");
             }
             saved = true;
-            if (!cancelled) {
-              setSnapshotStatus(`Saved to S3 · ${new Date(result.timestamp || timestamp).toLocaleTimeString()} · ${result.objectKey}`);
-            }
             break;
           } catch (error) {
             lastError = error;
@@ -596,15 +596,9 @@ export default function TakeAssessmentPage({
             }
           }
         }
-        if (!saved && !cancelled) {
-          const serverMessage = (lastError as { response?: { data?: { message?: string | string[] } }; message?: string })?.response?.data?.message;
-          const message = Array.isArray(serverMessage) ? serverMessage.join(", ") : serverMessage;
-          const fallback = (lastError as { message?: string })?.message;
-          setSnapshotStatus(`S3 save failed · ${message || fallback || "Upload failed after 3 attempts"}`);
-        }
+        if (!saved && !cancelled) console.warn("Assessment snapshot upload failed after retries:", lastError);
       } catch (error) {
         console.warn("Assessment page snapshot could not be uploaded:", error);
-        if (!cancelled) setSnapshotStatus(`Snapshot capture failed · ${(error as { message?: string })?.message || "capture unavailable"}`);
       }
       if (!cancelled) timer = window.setTimeout(() => void capture(), 20_000);
     };
@@ -1258,11 +1252,10 @@ export default function TakeAssessmentPage({
               <span className="min-w-0 truncate">Face check: {faceMonitorStatus}</span>
               <span className="shrink-0 font-semibold">{faceWarningCount}/5 warnings</span>
             </div>
-            <p className="text-[10px] leading-relaxed text-muted-foreground">Exam snapshots: {snapshotStatus}</p>
 
             <div role="status" className={`rounded-lg border px-2 py-1.5 text-xs ${faceWarningCount > 0 ? "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-300" : "border-border bg-muted/30 text-muted-foreground"}`}>
               <div className="flex items-center justify-between gap-2 font-semibold">
-                <span>Multiple-face warnings</span>
+                <span>Face verification warnings</span>
                 <span className="font-mono">{faceWarningCount} / {MAX_FACE_WARNINGS}</span>
               </div>
               <p className="mt-1 text-[10px] leading-relaxed">Warning 5 ends and submits your test.</p>

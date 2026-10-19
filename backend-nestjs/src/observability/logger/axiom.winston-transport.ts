@@ -25,6 +25,9 @@ export class AxiomWinstonTransport extends Transport {
     this.axiom = new Axiom({
       token: opts.token,
       edgeUrl: opts.edgeUrl || process.env.AXIOM_EDGE_URL || 'https://eu-central-1.aws.edge.axiom.co',
+      onError: () => {
+        // Fail-open: background batch ingestion errors must never disrupt application execution
+      },
     });
   }
 
@@ -54,7 +57,12 @@ export class AxiomWinstonTransport extends Transport {
         ...sanitizedMeta,
       };
 
-      this.axiom.ingest(this.dataset, [event]);
+      const ingestResult = this.axiom.ingest(this.dataset, [event]) as unknown;
+      if (ingestResult && typeof (ingestResult as Promise<unknown>).catch === 'function') {
+        (ingestResult as Promise<unknown>).catch(() => {
+          // Fail-open: network drops or Axiom ingestion errors must never disrupt application execution
+        });
+      }
     } catch {
       // Fail-open: logging failures must never disrupt application execution
     }

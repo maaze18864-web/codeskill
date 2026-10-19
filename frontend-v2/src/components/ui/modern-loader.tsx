@@ -61,7 +61,6 @@ export const ModernLoader: React.FC<ModernLoaderProps> = ({
   ],
   className,
 }) => {
-  const [mounted, setMounted] = useState(false);
   const [currentLine, setCurrentLine] = useState(0);
   const [cursorVisible, setCursorVisible] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -70,10 +69,6 @@ export const ModernLoader: React.FC<ModernLoaderProps> = ({
   const MAX_LINES = 100;
 
   const [lines, setLines] = useState(() => generateDeterministicLines(30, 0));
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const getVisibleRange = () => {
     const start = Math.max(0, currentLine - BUFFER);
@@ -90,7 +85,6 @@ export const ModernLoader: React.FC<ModernLoaderProps> = ({
   }, [currentLine]);
 
   useEffect(() => {
-    if (!mounted) return;
     const timer = setTimeout(() => {
       setCurrentLine((prev) => {
         const nextLine = prev + 1;
@@ -100,13 +94,12 @@ export const ModernLoader: React.FC<ModernLoaderProps> = ({
       });
     }, 200);
     return () => clearTimeout(timer);
-  }, [currentLine, lines.length, mounted]);
+  }, [currentLine, lines.length]);
 
   useEffect(() => {
-    if (!mounted) return;
     const interval = setInterval(() => setCursorVisible((prev) => !prev), 530);
     return () => clearInterval(interval);
-  }, [mounted]);
+  }, []);
 
   useEffect(() => {
     const cleanup = () => {

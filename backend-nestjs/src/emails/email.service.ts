@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SESClient, SendEmailCommand } from '@aws-sdk/client-ses';
+import { getOtpEmailTemplate } from './templates/otp-email.template';
 
 @Injectable()
 export class EmailService {
@@ -54,12 +55,14 @@ export class EmailService {
   }
 
   async sendOTPEmail(toEmail: string, otp: string): Promise<any> {
+    const { html, text, subject } = getOtpEmailTemplate(otp);
+
     if (this.isMock) {
       this.logger.log(`
 =========================================
 [MOCK SES] Email sending bypassed
 To: ${toEmail}
-Subject: Your CodeSkill Login Code: ${otp}
+Subject: ${subject}
 OTP CODE: ${otp}
 =========================================`);
       return { MessageId: 'mock-message-id-' + Date.now() };
@@ -71,25 +74,16 @@ OTP CODE: ${otp}
         Body: {
           Html: {
             Charset: 'UTF-8',
-            Data: `
-              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
-                <h2 style="color: #2563EB;">CodeSkill Authentication</h2>
-                <p>Hello,</p>
-                <p>Your one-time password (OTP) for logging in is:</p>
-                <h1 style="font-size: 32px; letter-spacing: 4px; color: #1e293b;">${otp}</h1>
-                <p>This code will expire in 5 minutes.</p>
-                <p>If you did not request this, please ignore this email.</p>
-              </div>
-            `,
+            Data: html,
           },
           Text: {
             Charset: 'UTF-8',
-            Data: `Your CodeSkill OTP is: ${otp}. It expires in 5 minutes.`,
+            Data: text,
           },
         },
         Subject: {
           Charset: 'UTF-8',
-          Data: `Your CodeSkill Login Code: ${otp}`,
+          Data: subject,
         },
       },
       Source: this.senderEmail,

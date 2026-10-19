@@ -413,3 +413,50 @@ it('requires registration before exposing start security settings', async () => 
   contests.findOne.mockResolvedValue({ ...contest, participants: [] });
   await expect(service.getStartContext(id, userId)).rejects.toBeInstanceOf(ForbiddenException);
 });
+
+it('consumes reattempt grant atomically inside a transaction with pessimistic locking (ISSUE-CON-001)', async () => {
+  const { contests, attempts, problems } = setup();
+  attempts.findOne.mockResolvedValueOnce({
+    id,
+    contest_id: id,
+    user_id: userId,
+    status: 'Submitted',
+    attemptNumber: 1,
+  });
+  const mockGrant = {
+    contest_id: id,
+    user_id: userId,
+    status: 'ACTIVE',
+    usedAttempts: 0,
+    allowedAttempts: 1,
+  };
+  const mockManager = {
+    findOne: jest.fn().mockResolvedValue(mockGrant),
+    save: jest.fn().mockImplementation((entityClass, obj) => Promise.resolve(obj || entityClass)),
+    create: jest.fn().mockImplementation((entityClass, obj) => ({ id: 'new-attempt', ...obj })),
+  };
+  const reattemptGrantRepo = {
+    manager: {
+      transaction: jest.fn().mockImplementation(async (cb) => cb(mockManager)),
+    },
+    findOne: jest.fn(),
+    save: jest.fn(),
+  };
+  const service = new ContestsService(
+    contests as never,
+    attempts as never,
+    problems as never,
+    undefined,
+    reattemptGrantRepo as never,
+  );
+  const result = await service.startAttempt(id, userId);
+  expect(reattemptGrantRepo.manager.transaction).toHaveBeenCalled();
+  expect(mockManager.findOne).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.objectContaining({
+      lock: { mode: 'pessimistic_write' },
+    }),
+  );
+  expect(mockGrant.usedAttempts).toBe(1);
+  expect(mockGrant.status).toBe('USED');
+});

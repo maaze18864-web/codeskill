@@ -89,6 +89,41 @@ export async function partitionTableIfRegular(
   await queryRunner.query(`DROP TABLE "${legacyTable}"`);
 }
 
+export function generateDynamicPartitionsSql(
+  tableName: string,
+  baseYear: number = 2026,
+  futureYearsCount: number = 4,
+): string {
+  const parts: string[] = [];
+
+  // Monthly partitions for base year (e.g. 2026)
+  for (let m = 1; m <= 12; m++) {
+    const mStr = m.toString().padStart(2, '0');
+    const nextM = m === 12 ? 1 : m + 1;
+    const nextY = m === 12 ? baseYear + 1 : baseYear;
+    const nextMStr = nextM.toString().padStart(2, '0');
+    parts.push(
+      `CREATE TABLE IF NOT EXISTS "${tableName}_y${baseYear}m${mStr}" PARTITION OF "${tableName}" ` +
+        `FOR VALUES FROM ('${baseYear}-${mStr}-01 00:00:00') TO ('${nextY}-${nextMStr}-01 00:00:00');`,
+    );
+  }
+
+  // Yearly partitions for future years (e.g. 2027, 2028, 2029, 2030)
+  for (let y = baseYear + 1; y <= baseYear + futureYearsCount; y++) {
+    parts.push(
+      `CREATE TABLE IF NOT EXISTS "${tableName}_y${y}" PARTITION OF "${tableName}" ` +
+        `FOR VALUES FROM ('${y}-01-01 00:00:00') TO ('${y + 1}-01-01 00:00:00');`,
+    );
+  }
+
+  // Default partition for catch-all resilience
+  parts.push(
+    `CREATE TABLE IF NOT EXISTS "${tableName}_default" PARTITION OF "${tableName}" DEFAULT;`,
+  );
+
+  return parts.join('\n');
+}
+
 export async function applyDeclarativePartitioningMigration(
   queryRunner: MigrationQueryRunner,
   options: { skipSubmissions?: boolean } = {},
@@ -129,15 +164,7 @@ export async function applyDeclarativePartitioningMigration(
       CONSTRAINT "PK_submissions" PRIMARY KEY ("id", "createdAt"),
       CONSTRAINT "CHK_submissions_problem_source" CHECK ("problemSource" IN ('problem', 'metadata', 'question', 'contest-question'))
     ) PARTITION BY RANGE ("createdAt")`,
-      `CREATE TABLE IF NOT EXISTS "submissions_y2026m10" PARTITION OF "submissions"
-      FOR VALUES FROM ('2026-10-01 00:00:00') TO ('2026-11-01 00:00:00');
-     CREATE TABLE IF NOT EXISTS "submissions_y2026m11" PARTITION OF "submissions"
-      FOR VALUES FROM ('2026-11-01 00:00:00') TO ('2026-12-01 00:00:00');
-     CREATE TABLE IF NOT EXISTS "submissions_y2026m12" PARTITION OF "submissions"
-      FOR VALUES FROM ('2026-12-01 00:00:00') TO ('2027-01-01 00:00:00');
-     CREATE TABLE IF NOT EXISTS "submissions_y2027" PARTITION OF "submissions"
-      FOR VALUES FROM ('2027-01-01 00:00:00') TO ('2028-01-01 00:00:00');
-     CREATE TABLE IF NOT EXISTS "submissions_default" PARTITION OF "submissions" DEFAULT;`,
+      generateDynamicPartitionsSql('submissions'),
       `CREATE INDEX IF NOT EXISTS "IDX_submissions_id" ON "submissions" ("id");
      CREATE INDEX IF NOT EXISTS "IDX_submissions_user_problem_status" ON "submissions" ("userId", "problemId", "status");
      CREATE INDEX IF NOT EXISTS "IDX_submissions_createdAt" ON "submissions" ("createdAt");
@@ -162,15 +189,7 @@ export async function applyDeclarativePartitioningMigration(
       "updatedAt" timestamp NOT NULL DEFAULT now(),
       CONSTRAINT "PK_exam_security_events" PRIMARY KEY ("id", "createdAt")
     ) PARTITION BY RANGE ("createdAt")`,
-    `CREATE TABLE IF NOT EXISTS "exam_security_events_y2026m10" PARTITION OF "exam_security_events"
-      FOR VALUES FROM ('2026-10-01 00:00:00') TO ('2026-11-01 00:00:00');
-     CREATE TABLE IF NOT EXISTS "exam_security_events_y2026m11" PARTITION OF "exam_security_events"
-      FOR VALUES FROM ('2026-11-01 00:00:00') TO ('2026-12-01 00:00:00');
-     CREATE TABLE IF NOT EXISTS "exam_security_events_y2026m12" PARTITION OF "exam_security_events"
-      FOR VALUES FROM ('2026-12-01 00:00:00') TO ('2027-01-01 00:00:00');
-     CREATE TABLE IF NOT EXISTS "exam_security_events_y2027" PARTITION OF "exam_security_events"
-      FOR VALUES FROM ('2027-01-01 00:00:00') TO ('2028-01-01 00:00:00');
-     CREATE TABLE IF NOT EXISTS "exam_security_events_default" PARTITION OF "exam_security_events" DEFAULT;`,
+    generateDynamicPartitionsSql('exam_security_events'),
     `CREATE INDEX IF NOT EXISTS "IDX_exam_security_events_id" ON "exam_security_events" ("id");
      CREATE INDEX IF NOT EXISTS "IDX_exam_security_events_session_id" ON "exam_security_events" ("session_id");
      CREATE INDEX IF NOT EXISTS "IDX_exam_security_events_candidate_id" ON "exam_security_events" ("candidate_id");
@@ -201,15 +220,7 @@ export async function applyDeclarativePartitioningMigration(
       "timestamp" timestamp NOT NULL DEFAULT now(),
       CONSTRAINT "PK_audit_logs" PRIMARY KEY ("id", "timestamp")
     ) PARTITION BY RANGE ("timestamp")`,
-    `CREATE TABLE IF NOT EXISTS "audit_logs_y2026m10" PARTITION OF "audit_logs"
-      FOR VALUES FROM ('2026-10-01 00:00:00') TO ('2026-11-01 00:00:00');
-     CREATE TABLE IF NOT EXISTS "audit_logs_y2026m11" PARTITION OF "audit_logs"
-      FOR VALUES FROM ('2026-11-01 00:00:00') TO ('2026-12-01 00:00:00');
-     CREATE TABLE IF NOT EXISTS "audit_logs_y2026m12" PARTITION OF "audit_logs"
-      FOR VALUES FROM ('2026-12-01 00:00:00') TO ('2027-01-01 00:00:00');
-     CREATE TABLE IF NOT EXISTS "audit_logs_y2027" PARTITION OF "audit_logs"
-      FOR VALUES FROM ('2027-01-01 00:00:00') TO ('2028-01-01 00:00:00');
-     CREATE TABLE IF NOT EXISTS "audit_logs_default" PARTITION OF "audit_logs" DEFAULT;`,
+    generateDynamicPartitionsSql('audit_logs'),
     `CREATE INDEX IF NOT EXISTS "IDX_audit_logs_id" ON "audit_logs" ("id");
      CREATE INDEX IF NOT EXISTS "IDX_audit_logs_action_timestamp" ON "audit_logs" ("action", "timestamp");
      CREATE INDEX IF NOT EXISTS "IDX_audit_logs_targetType_target" ON "audit_logs" ("targetType", "target");

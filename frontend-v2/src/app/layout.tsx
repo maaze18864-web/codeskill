@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
+import { getSiteUrl } from "@/lib/site-url";
 import "./globals.css";
 
 const roboto = localFont({
@@ -14,6 +15,7 @@ const roboto = localFont({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(getSiteUrl()),
   title: "CodeSkill — Algorithmic Assessment & Skill System",
   description:
     "Practice DSA, solve coding problems, take proctored assessments, and prepare for technical interviews with CodeSkill.",

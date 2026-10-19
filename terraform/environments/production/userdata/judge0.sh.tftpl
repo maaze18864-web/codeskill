@@ -54,7 +54,17 @@ ExecStartPre=-/usr/bin/docker stop codeskill-judge0
 ExecStartPre=-/usr/bin/docker rm codeskill-judge0
 ExecStart=/usr/bin/docker run --rm --name codeskill-judge0 \\
   -p 2358:2358 \\
-  --privileged \\
+  --cap-drop ALL \\
+  --cap-add SYS_ADMIN \\
+  --cap-add SETUID \\
+  --cap-add SETGID \\
+  --cap-add CHOWN \\
+  --cap-add DAC_OVERRIDE \\
+  --security-opt no-new-privileges:false \\
+  --pids-limit 1024 \\
+  --memory 2048m \\
+  --memory-swap 2048m \\
+  --cpus 2.0 \\
   $JUDGE0_IMAGE
 ExecStop=/usr/bin/docker stop -t 15 codeskill-judge0
 
@@ -81,5 +91,34 @@ if [ -n "$CLOUD_MAP_SERVICE_ID" ]; then
     --attributes AWS_INSTANCE_IPV4="$PRIVATE_IP",AWS_INSTANCE_PORT=2358 \
     --region "$REGION"
 fi
+
+# 5. Configure Deregistration Hook on Shutdown (ISSUE-INF-008)
+cat << 'EOF' > /usr/local/bin/deregister-cloudmap.sh
+#!/bin/bash
+TOKEN=$(curl -s -S -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 60" 2>/dev/null || true)
+INSTANCE_ID=$(curl -s -S -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null || true)
+if [ -n "$INSTANCE_ID" ]; then
+  aws servicediscovery deregister-instance --service-id "${judge0_service_id}" --instance-id "$INSTANCE_ID" --region "${aws_region}" || true
+fi
+EOF
+chmod +x /usr/local/bin/deregister-cloudmap.sh
+
+cat << 'EOF' > /etc/systemd/system/deregister-cloudmap.service
+[Unit]
+Description=Deregister Judge0 Instance from AWS Cloud Map on Shutdown
+DefaultDependencies=no
+Before=shutdown.target reboot.target halt.target network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/deregister-cloudmap.sh
+TimeoutSec=20
+
+[Install]
+WantedBy=shutdown.target reboot.target halt.target
+EOF
+
+systemctl daemon-reload
+systemctl enable deregister-cloudmap.service
 
 echo "CodeSkill Judge0 bootstrap complete at $(date -u +"%Y-%m-%dT%H:%M:%SZ")"

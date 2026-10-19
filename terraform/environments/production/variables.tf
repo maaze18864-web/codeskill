@@ -71,27 +71,27 @@ variable "db_instance_class" {
 
 # Image tags for immutable deployments
 variable "frontend_image_tag" {
-  description = "Docker image tag for frontend container"
+  description = "Docker image tag or immutable commit SHA for frontend container"
   type        = string
-  default     = "latest"
+  default     = "v2.0.0"
 }
 
 variable "backend_image_tag" {
-  description = "Docker image tag for backend container"
+  description = "Docker image tag or immutable commit SHA for backend container"
   type        = string
-  default     = "latest"
+  default     = "v2.0.0"
 }
 
 variable "piston_image_tag" {
   description = "Docker image tag for piston container"
   type        = string
-  default     = "latest"
+  default     = "v2.0.0"
 }
 
 variable "judge0_image_tag" {
   description = "Docker image tag for judge0 container"
   type        = string
-  default     = "latest"
+  default     = "v2.0.0"
 }
 
 # Sizing and Instance Types (Production capacity for 1,000 concurrent users)

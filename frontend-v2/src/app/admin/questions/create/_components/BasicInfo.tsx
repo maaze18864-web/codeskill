@@ -99,7 +99,7 @@ export default function BasicInfo({ practice = false }: { practice?: boolean }) 
             />
             {metadata.slug && (
               <p className="text-[11px] text-gray-400 dark:text-muted-foreground">
-                codeskill.com/problems/<span className="text-indigo-500 font-medium">{metadata.slug}</span>
+                codeskill.novaserve.cloud/problems/<span className="text-indigo-500 font-medium">{metadata.slug}</span>
               </p>
             )}
           </div>

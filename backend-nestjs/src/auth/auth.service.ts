@@ -34,6 +34,10 @@ import {
   LogoutDto,
 } from './dto/auth.dto';
 
+function escapeIlike(str: string): string {
+  return str.replace(/[%_\\]/g, '\\$&');
+}
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -102,15 +106,17 @@ export class AuthService {
 
   async login(dto: LoginDto, ip?: string) {
     const raw = (dto.email || '').trim();
+    if (!raw) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
     await this.loginThrottleService.assertAllowed(raw, ip);
 
+    const escaped = escapeIlike(raw);
     const user = await this.userRepository.findOne({
       where: [
-        { email: ILike(raw) },
-        { uid: ILike(raw) },
-        { username: ILike(raw) },
-        { name: ILike(raw) },
-        { email: ILike(`${raw}@%`) },
+        { email: ILike(escaped) },
+        { uid: ILike(escaped) },
+        { username: ILike(escaped) },
       ],
       select: {
         id: true,
@@ -201,15 +207,17 @@ export class AuthService {
 
   async adminLogin(dto: AdminLoginDto, ip?: string) {
     const raw = (dto.email || '').trim();
+    if (!raw) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
     await this.loginThrottleService.assertAllowed(raw, ip);
 
+    const escaped = escapeIlike(raw);
     const user = await this.userRepository.findOne({
       where: [
-        { email: ILike(raw) },
-        { uid: ILike(raw) },
-        { username: ILike(raw) },
-        { name: ILike(raw) },
-        { email: ILike(`${raw}@%`) },
+        { email: ILike(escaped) },
+        { uid: ILike(escaped) },
+        { username: ILike(escaped) },
       ],
       select: {
         id: true,
@@ -295,15 +303,17 @@ export class AuthService {
 
   async studentLogin(dto: StudentLoginDto, ip?: string) {
     const raw = (dto.uid || '').trim();
+    if (!raw) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
     await this.loginThrottleService.assertAllowed(raw, ip);
 
+    const escaped = escapeIlike(raw);
     const user = await this.userRepository.findOne({
       where: [
-        { uid: ILike(raw) },
-        { email: ILike(raw) },
-        { username: ILike(raw) },
-        { name: ILike(raw) },
-        { email: ILike(`${raw}@%`) },
+        { uid: ILike(escaped) },
+        { email: ILike(escaped) },
+        { username: ILike(escaped) },
       ],
       select: {
         id: true,

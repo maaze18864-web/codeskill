@@ -17,14 +17,19 @@ export class MetricsController {
     const authHeader = req.headers.authorization;
     const clientIp = req.ip || req.socket?.remoteAddress || '';
 
+    const normalizedIp = clientIp.replace(/^::ffff:/, '');
     const isInternalIp =
-      clientIp.includes('127.0.0.1') ||
-      clientIp.includes('::1') ||
-      clientIp.includes('10.') ||
-      clientIp.includes('172.') ||
-      clientIp.includes('192.168.');
+      normalizedIp === '127.0.0.1' ||
+      normalizedIp === '::1' ||
+      /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(normalizedIp) ||
+      /^172\.(1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3}$/.test(normalizedIp) ||
+      /^192\.168\.\d{1,3}\.\d{1,3}$/.test(normalizedIp);
 
-    if (scrapeToken && authHeader !== `Bearer ${scrapeToken}` && !isInternalIp) {
+    if (scrapeToken) {
+      if (authHeader !== `Bearer ${scrapeToken}` && !isInternalIp) {
+        throw new UnauthorizedException('Metrics access restricted to authorized scrapers');
+      }
+    } else if (!isInternalIp) {
       throw new UnauthorizedException('Metrics access restricted to internal VPC');
     }
 

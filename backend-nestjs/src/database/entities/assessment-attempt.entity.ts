@@ -13,6 +13,7 @@ import { User } from './user.entity';
 
 export type AttemptStatus =
   | 'in_progress'
+  | 'evaluating'
   | 'submitted'
   | 'auto_submitted'
   | 'timed_out'

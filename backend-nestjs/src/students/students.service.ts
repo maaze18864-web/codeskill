@@ -17,6 +17,7 @@ import * as xlsx from 'xlsx';
 import { CreateStudentDto } from './dto/create-student.dto';
 import { UpdateStudentDto } from './dto/update-student.dto';
 import { QueryStudentsDto } from './dto/query-students.dto';
+import { encryptTemporaryPassword } from './utils/credential-crypto.util';
 
 @Injectable()
 export class StudentsService {
@@ -368,7 +369,16 @@ export class StudentsService {
   ) {
     let workbook: xlsx.WorkBook;
     try {
-      workbook = xlsx.read(fileBuffer, { type: 'buffer' });
+      workbook = xlsx.read(fileBuffer, {
+        type: 'buffer',
+        cellFormula: false,
+        cellHTML: false,
+        cellNF: false,
+        cellStyles: false,
+        sheetStubs: false,
+        raw: true,
+        dense: true,
+      });
     } catch (e: any) {
       throw new BadRequestException(
         'Unable to parse spreadsheet file: ' + e.message,
@@ -382,14 +392,37 @@ export class StudentsService {
       );
     }
 
-    const rawRows = xlsx.utils.sheet_to_json<Record<string, any>>(
+    const rawParsed = xlsx.utils.sheet_to_json<Record<string, any>>(
       workbook.Sheets[firstSheetName],
       { defval: '' },
     );
 
-    if (!rawRows || rawRows.length === 0) {
+    if (!rawParsed || rawParsed.length === 0) {
       throw new BadRequestException('Uploaded sheet is empty');
     }
+
+    if (rawParsed.length > 1000) {
+      throw new BadRequestException(
+        'Uploaded spreadsheet exceeds maximum allowed limit of 1,000 rows',
+      );
+    }
+
+    // Deep sanitize rows against Prototype Pollution (CVE-2023-30533, CVE-2024-22363)
+    const rawRows = rawParsed.map((row) => {
+      const clean: Record<string, any> = {};
+      for (const [key, val] of Object.entries(row)) {
+        const lowerKey = key.trim().toLowerCase();
+        if (
+          lowerKey === '__proto__' ||
+          lowerKey === 'constructor' ||
+          lowerKey === 'prototype'
+        ) {
+          continue;
+        }
+        clean[key] = typeof val === 'string' && val.length > 5000 ? val.slice(0, 5000) : val;
+      }
+      return clean;
+    });
 
     const findField = (row: Record<string, any>, aliases: string[]): string => {
       const rowKeys = Object.keys(row);
@@ -651,6 +684,12 @@ export class StudentsService {
       throw new BadRequestException('No valid rows provided for import');
     }
 
+    if (validRows.length > 500) {
+      throw new BadRequestException(
+        'Batch import exceeds maximum allowed limit of 500 students per batch',
+      );
+    }
+
     const uids = [...new Set(validRows.map((r) => String(r.uid || '').toUpperCase().trim()))].filter(Boolean);
     const emails = [...new Set(validRows.map((r) => String(r.email || '').toLowerCase().trim()))].filter(Boolean);
 
@@ -732,59 +771,70 @@ export class StudentsService {
     const usersToInsert: User[] = [];
     const emailJobsToInsert: EmailJob[] = [];
 
-    for (const row of rowsToInsert) {
-      const rawPassword =
-        row.password && String(row.password).trim()
-          ? String(row.password).trim()
-          : this.generateSecurePassword(12);
-      const hashedPassword = await bcrypt.hash(rawPassword, salt);
+    // Process bcrypt hashing with bounded concurrency (5 per batch) to fully utilize
+    // libuv threadpool without starvation or request timeouts (ISSUE-PRF-002)
+    const HASH_BATCH_SIZE = 5;
+    for (let i = 0; i < rowsToInsert.length; i += HASH_BATCH_SIZE) {
+      const chunk = rowsToInsert.slice(i, i + HASH_BATCH_SIZE);
+      const hashedChunk = await Promise.all(
+        chunk.map(async (row) => {
+          const rawPassword =
+            row.password && String(row.password).trim()
+              ? String(row.password).trim()
+              : this.generateSecurePassword(12);
+          const hashedPassword = await bcrypt.hash(rawPassword, salt);
+          return { row, rawPassword, hashedPassword };
+        }),
+      );
 
-      const cleanMobile = row.mobile
-        ? String(row.mobile).replace(/[\s\-().]/g, '')
-        : '';
+      for (const { row, rawPassword, hashedPassword } of hashedChunk) {
+        const cleanMobile = row.mobile
+          ? String(row.mobile).replace(/[\s\-().]/g, '')
+          : '';
 
-      const u = this.userRepository.create({
-        name: String(row.name).trim(),
-        email: String(row.email).toLowerCase().trim(),
-        uid: String(row.uid).toUpperCase().trim(),
-        password: hashedPassword,
-        role: 'student',
-        isAssessmentStudent: true,
-        forcePasswordChange: true,
-        isActive: true,
-        authProvider: 'local',
-        studentProfile: {
-          university:
-            row.university || defaultOptions?.defaultUniversity || '',
-          department:
-            row.department || defaultOptions?.defaultDepartment || '',
-          course: row.course || defaultOptions?.defaultCourse || '',
-          semester:
-            row.semester || defaultOptions?.defaultSemester || 1,
-          section: row.section || defaultOptions?.defaultSection || '',
-          group: row.group || defaultOptions?.defaultGroup || '',
-          batch: row.batch || defaultOptions?.defaultBatch || '',
-          year:
-            row.year ||
-            defaultOptions?.defaultYear ||
-            new Date().getFullYear(),
-          ...(cleanMobile
-            ? { mobile: cleanMobile, phone: cleanMobile }
-            : {}),
-        },
-      });
-      usersToInsert.push(u);
+        const u = this.userRepository.create({
+          name: String(row.name).trim(),
+          email: String(row.email).toLowerCase().trim(),
+          uid: String(row.uid).toUpperCase().trim(),
+          password: hashedPassword,
+          role: 'student',
+          isAssessmentStudent: true,
+          forcePasswordChange: true,
+          isActive: true,
+          authProvider: 'local',
+          studentProfile: {
+            university:
+              row.university || defaultOptions?.defaultUniversity || '',
+            department:
+              row.department || defaultOptions?.defaultDepartment || '',
+            course: row.course || defaultOptions?.defaultCourse || '',
+            semester:
+              row.semester || defaultOptions?.defaultSemester || 1,
+            section: row.section || defaultOptions?.defaultSection || '',
+            group: row.group || defaultOptions?.defaultGroup || '',
+            batch: row.batch || defaultOptions?.defaultBatch || '',
+            year:
+              row.year ||
+              defaultOptions?.defaultYear ||
+              new Date().getFullYear(),
+            ...(cleanMobile
+              ? { mobile: cleanMobile, phone: cleanMobile }
+              : {}),
+          },
+        });
+        usersToInsert.push(u);
 
-      const job = this.emailJobRepo.create({
-        uid: u.uid,
-        email: u.email,
-        name: u.name,
-        temporaryPassword: rawPassword,
-        status: 'pending',
-        retryCount: 0,
-        createdBy: adminUser?.id || adminUser?._id,
-      });
-      emailJobsToInsert.push(job);
+        const job = this.emailJobRepo.create({
+          uid: u.uid,
+          email: u.email,
+          name: u.name,
+          temporaryPassword: encryptTemporaryPassword(rawPassword),
+          status: 'pending',
+          retryCount: 0,
+          createdBy: adminUser?.id || adminUser?._id,
+        });
+        emailJobsToInsert.push(job);
+      }
     }
 
     // Process inserts inside a database transaction for complete data integrity
@@ -916,7 +966,7 @@ export class StudentsService {
         uid: student.uid,
         email: student.email,
         name: student.name,
-        temporaryPassword: tempPass,
+        temporaryPassword: encryptTemporaryPassword(tempPass),
         status: 'queued',
         retryCount: 0,
       });

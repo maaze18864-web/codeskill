@@ -1,32 +1,34 @@
 import { MetadataRoute } from 'next';
+import { getSiteUrl } from '@/lib/site-url';
 
 export default function robots(): MetadataRoute.Robots {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://codeskill.com';
-
   return {
     rules: [
       {
         userAgent: '*',
         allow: [
           '/',
-          '/problems',
-          '/contests',
-          '/leaderboard',
-          '/discuss',
+          '/_next/static/',
         ],
         disallow: [
           '/admin/',
+          '/teacher/',
+          '/assessments/',
           '/assessment/',
           '/campus/',
           '/company/',
+          '/dashboard/',
+          '/profile/',
           '/api/',
-          '/_next/',
           '/login',
           '/register',
           '/student-login',
+          '/forgot-password',
+          '/demo-report',
+          '/result-demo',
         ],
       },
     ],
-    sitemap: `${baseUrl}/sitemap.xml`,
+    sitemap: getSiteUrl('/sitemap.xml'),
   };
 }

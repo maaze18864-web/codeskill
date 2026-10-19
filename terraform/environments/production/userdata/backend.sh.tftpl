@@ -126,8 +126,8 @@ JUDGE0_MAX_CONCURRENT_EXECUTIONS=20
 JUDGE0_GLOBAL_MAX_CONCURRENT=50
 JUDGE0_NODE_MAX_CONCURRENT=20
 ENABLE_EMBEDDED_JUDGE=true
-DB_POOL_MAX=30
-DB_POOL_MIN=5
+DB_POOL_MAX=15
+DB_POOL_MIN=2
 S3_BUCKET_NAME=${s3_bucket_name}
 AWS_REGION=$REGION
 EOF
@@ -158,11 +158,6 @@ ExecStop=/usr/bin/docker stop -t 30 codeskill-backend
 WantedBy=multi-user.target
 EOF
 
-# Run the migration in the same image/configuration before accepting requests.
-docker run --rm --env-file /opt/codeskill/backend.env \
-  -v /opt/codeskill/rds-global-bundle.pem:/app/certs/rds-global-bundle.pem:ro \
-  "$IMAGE" node dist/database/run-practice-submission-source.js
-
 # 6. Start Backend Service
 systemctl daemon-reload
 systemctl enable --now codeskill-backend.service
@@ -182,3 +177,98 @@ done
 if [ "$READY" != true ]; then echo "Backend readiness probe failed" >&2; exit 1; fi
 
 echo "CodeSkill Backend instance ready at $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+
+# 7. Register with AWS Cloud Map Private DNS Service
+CLOUD_MAP_SERVICE_ID="${backend_service_id}"
+if [ -n "$CLOUD_MAP_SERVICE_ID" ]; then
+  TOKEN=$(curl -s -S -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 60" 2>/dev/null || true)
+  INSTANCE_ID=$(curl -s -S -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null || true)
+  PRIVATE_IP=$(curl -s -S -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/local-ipv4 2>/dev/null || true)
+  if [ -n "$INSTANCE_ID" ] && [ -n "$PRIVATE_IP" ]; then
+    echo "Registering $INSTANCE_ID ($PRIVATE_IP) with Cloud Map Service $CLOUD_MAP_SERVICE_ID..."
+    aws servicediscovery register-instance \
+      --service-id "$CLOUD_MAP_SERVICE_ID" \
+      --instance-id "$INSTANCE_ID" \
+      --attributes AWS_INSTANCE_IPV4="$PRIVATE_IP",AWS_INSTANCE_PORT=5001 \
+      --region "$REGION" || true
+  fi
+fi
+
+cat << 'EOF' > /usr/local/bin/deregister-cloudmap.sh
+#!/bin/bash
+TOKEN=$(curl -s -S -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 60" 2>/dev/null || true)
+INSTANCE_ID=$(curl -s -S -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null || true)
+if [ -n "$INSTANCE_ID" ]; then
+  aws servicediscovery deregister-instance --service-id "${backend_service_id}" --instance-id "$INSTANCE_ID" --region "${aws_region}" || true
+fi
+EOF
+chmod +x /usr/local/bin/deregister-cloudmap.sh
+
+cat << 'EOF' > /etc/systemd/system/deregister-cloudmap.service
+[Unit]
+Description=Deregister Backend Instance from AWS Cloud Map on Shutdown
+DefaultDependencies=no
+Before=shutdown.target reboot.target halt.target network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/deregister-cloudmap.sh
+TimeoutSec=20
+
+[Install]
+WantedBy=shutdown.target reboot.target halt.target
+EOF
+systemctl daemon-reload
+systemctl enable deregister-cloudmap.service
+
+# 8. Start Grafana Alloy for Observability Metrics
+mkdir -p /etc/alloy /var/lib/alloy/data
+if grep -Eq '^GRAFANA_CLOUD_API_TOKEN=.+$' /opt/codeskill/backend.env; then
+  grep -E '^GRAFANA_CLOUD_API_TOKEN=' /opt/codeskill/backend.env > /etc/alloy/alloy.env
+  chmod 600 /etc/alloy/alloy.env
+  cat > /etc/alloy/config.alloy << 'EOF'
+prometheus.scrape "codeskill_backend" {
+  targets = [
+    {
+      "__address__" = "127.0.0.1:5001",
+    },
+  ]
+  metrics_path = "/api/metrics"
+  scrape_interval = "15s"
+  forward_to = [prometheus.remote_write.grafanacloud.receiver]
+}
+
+prometheus.remote_write "grafanacloud" {
+  endpoint {
+    url = "https://prometheus-prod-43-prod-ap-south-1.grafana.net/api/prom/push"
+    basic_auth {
+      username = "3666421"
+      password = env("GRAFANA_CLOUD_API_TOKEN")
+    }
+  }
+}
+EOF
+
+  cat > /etc/systemd/system/codeskill-alloy.service << 'EOF'
+[Unit]
+Description=Grafana Alloy Observability Agent
+After=docker.service codeskill-backend.service
+Requires=docker.service
+
+[Service]
+TimeoutStartSec=0
+Restart=always
+RestartSec=5
+ExecStartPre=-/usr/bin/docker stop codeskill-alloy
+ExecStartPre=-/usr/bin/docker rm codeskill-alloy
+ExecStart=/usr/bin/docker run --rm --name codeskill-alloy --network host -v /etc/alloy:/etc/alloy -v /var/lib/alloy/data:/var/lib/alloy/data --env-file /etc/alloy/alloy.env grafana/alloy:v1.0.0 run /etc/alloy/config.alloy --storage.path=/var/lib/alloy/data
+ExecStop=/usr/bin/docker stop -t 15 codeskill-alloy
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  systemctl daemon-reload
+  systemctl enable --now codeskill-alloy.service
+  echo "Grafana Alloy agent started successfully."
+fi

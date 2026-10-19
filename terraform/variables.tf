@@ -263,9 +263,9 @@ variable "judge0_worker_max_size" {
 # Amazon RDS PostgreSQL
 # -------------------------------------------------------------------------------------------------
 variable "db_instance_class" {
-  description = "Database instance class. db.t4g.micro is ARM-based with 2 vCPU and 1 GiB RAM."
+  description = "Database instance class. db.t3.medium has 2 vCPU and 4 GiB RAM."
   type        = string
-  default     = "db.t4g.medium"
+  default     = "db.t3.medium"
 }
 
 variable "db_allocated_storage" {

@@ -232,36 +232,36 @@
 }
 
 .dark .codeskill-problem-workspace .workspace-activity-rail {
-  background: #111318;
-  border-color: #2d323a;
+  background: var(--cs-bg);
+  border-color: var(--cs-border);
 }
 
 .dark .codeskill-problem-workspace .workspace-activity-rail button {
-  color: #a7b0bd;
+  color: var(--cs-text-secondary);
 }
 
 .dark .codeskill-problem-workspace .workspace-activity-rail button:hover {
   color: #53c27a;
-  background: #18251d;
+  background: var(--cs-hover);
 }
 
 .dark .codeskill-problem-workspace .workspace-panels {
-  background: #101216;
+  background: var(--cs-bg);
 }
 
 .dark .codeskill-problem-workspace .workspace-pane {
-  border-color: #303640;
+  border-color: var(--cs-border);
   box-shadow: none;
 }
 
 .dark .codeskill-problem-workspace .workspace-pane > div:first-child {
-  background: #20242b;
-  border-color: #303640;
+  background: var(--cs-raised);
+  border-color: var(--cs-border);
 }
 
 .dark .codeskill-problem-workspace .workspace-editor-pane > div:first-child,
 .dark .codeskill-problem-workspace .workspace-output-pane > div:first-child {
-  background: #20212a;
+  background: var(--cs-surface);
 }
 
 @media (max-width: 720px) {
@@ -277,6 +277,26 @@
 @layer base {
   :root {
     color-scheme: light;
+
+    /* Shared design scale. Color values remain theme-specific below. */
+    --ds-space-1: 4px;
+    --ds-space-2: 8px;
+    --ds-space-3: 12px;
+    --ds-space-4: 16px;
+    --ds-space-6: 24px;
+    --ds-space-8: 32px;
+    --ds-radius-card: 12px;
+    --ds-radius-control: 8px;
+    --ds-control-height: 40px;
+    --ds-badge-height: 24px;
+    --ds-font-xs: 12px;
+    --ds-font-sm: 14px;
+    --ds-font-base: 16px;
+    --ds-font-lg: 20px;
+    --ds-font-title: 28px;
+    --ds-motion-duration: 180ms;
+    --ds-motion: 180ms ease;
+    --ds-shadow-card: 0 1px 2px rgb(0 0 0 / 0.04), 0 8px 24px -18px rgb(0 0 0 / 0.16);
 
     /* Light Mode: PAGE: #F8F8F6 | SURFACES: #FFFFFF | SECONDARY: #F4F4F2 | TEXT: #111111 / #525252 */
     --background: 210 40% 98%;       /* #F8F8F6 soft warm off-white page */
@@ -327,27 +347,40 @@
   .dark {
     color-scheme: dark;
 
-    /* Dark Mode: Deep Charcoal, Off-White, Dark Gray Borders */
-    --background: 222 47% 7%;         /* #0a0a0a */
-    --foreground: 210 40% 96%;        /* #ededed */
+    /* Gemini-inspired neutral surfaces. Edit these tokens to retheme dark mode. */
+    --cs-bg: #131314;
+    --cs-surface: #1e1f20;
+    --cs-hover: #282a2c;
+    --cs-raised: #2d2f31;
+    --cs-border: #333537;
+    --cs-border-strong: #444746;
+    --cs-text: #e3e3e3;
+    --cs-text-secondary: #c4c7c5;
+    --cs-text-muted: #8e918f;
+    --cs-brand: #22c55e;
+    --cs-status-warning: #facc15;
+    --cs-status-danger: #ef4444;
 
-    --card: 222 39% 10%;               /* #141414 */
-    --card-foreground: 210 40% 96%;
+    --background: 240 2.564% 7.647%;
+    --foreground: 0 0% 89.02%;
 
-    --popover: 222 39% 10%;
-    --popover-foreground: 210 40% 96%;
+    --card: 210 3.226% 12.157%;
+    --card-foreground: 0 0% 89.02%;
 
-    --primary: 145 70% 48%;           /* #fafafa */
-    --primary-foreground: 222 47% 10%;
+    --popover: 210 3.226% 12.157%;
+    --popover-foreground: 0 0% 89.02%;
 
-    --secondary: 217 33% 15%;         /* #1f1f1f */
-    --secondary-foreground: 210 40% 96%;
+    --primary: 145 70% 48%;
+    --primary-foreground: 240 2.564% 7.647%;
 
-    --muted: 217 33% 15%;             /* #1f1f1f */
-    --muted-foreground: 215 20% 68%;  /* #999999 */
+    --secondary: 210 4.255% 18.431%;
+    --secondary-foreground: 140 2.609% 77.451%;
 
-    --accent: 145 30% 15%;
-    --accent-foreground: 145 70% 68%;
+    --muted: 210 4.762% 16.471%;
+    --muted-foreground: 140 1.345% 56.275%;
+
+    --accent: 210 4.762% 16.471%;
+    --accent-foreground: 140 2.609% 77.451%;
 
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
@@ -358,17 +391,17 @@
     --warning: 38 92% 50%;
     --warning-foreground: 0 0% 100%;
 
-    --border: 215 28% 19%;            /* #2e2e2e */
-    --input: 215 28% 22%;
-    --skeleton: 0 0% 14%;
-    --btn-border: 0 0% 18%;
+    --border: 210 3.774% 20.784%;
+    --input: 210 3.774% 20.784%;
+    --skeleton: 210 4.762% 16.471%;
+    --btn-border: 210 3.774% 20.784%;
     --ring: 145 70% 48%;
 
     /* Sidebar tokens */
-    --sidebar: 222 44% 8%;
-    --sidebar-foreground: 210 40% 96%;
-    --sidebar-border: 215 28% 17%;
-    --sidebar-accent: 145 30% 15%;
+    --sidebar: 240 2.564% 7.647%;
+    --sidebar-foreground: 0 0% 89.02%;
+    --sidebar-border: 210 3.774% 20.784%;
+    --sidebar-accent: 210 4.762% 16.471%;
     --sidebar-accent-foreground: 145 70% 68%;
   }
 
@@ -377,7 +410,7 @@
   }
 
   html {
-    font-size: 15px;
+    font-size: 16px;
   }
 
   html,
@@ -418,13 +451,13 @@
 
   :where(.bg-card.border, [data-slot="card"]) {
     border-color: hsl(var(--border) / 0.82);
-    box-shadow: 0 1px 2px hsl(222 47% 11% / 0.035), 0 8px 26px hsl(222 47% 11% / 0.035);
-    transition: border-color 180ms ease, box-shadow 220ms ease, transform 220ms ease;
+    box-shadow: var(--ds-shadow-card);
+    transition: border-color var(--ds-motion), box-shadow var(--ds-motion), transform var(--ds-motion);
   }
 
   :where(.bg-card.border:hover, [data-slot="card"]:hover) {
-    border-color: hsl(var(--primary) / 0.34);
-    box-shadow: 0 2px 4px hsl(222 47% 11% / 0.045), 0 14px 34px hsl(222 47% 11% / 0.075);
+    border-color: hsl(var(--border));
+    box-shadow: var(--ds-shadow-card);
   }
 
   ::selection {
@@ -552,7 +585,7 @@
   color: #b9c4d4;
 }
 
-.admin-nav-link[class*="bg-primary"] {
+.admin-nav-link[class~="bg-primary"] {
   position: relative;
   border: 1px solid rgb(74 222 128 / 0.18);
   color: #f4fff8;
@@ -560,7 +593,7 @@
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
 }
 
-.admin-nav-link[class*="bg-primary"]::before {
+.admin-nav-link[class~="bg-primary"]::before {
   position: absolute;
   left: -1px;
   top: 9px;
@@ -571,7 +604,7 @@
   content: "";
 }
 
-.admin-nav-link[class*="bg-primary"] svg {
+.admin-nav-link[class~="bg-primary"] svg {
   color: #86efac;
 }
 
@@ -593,7 +626,7 @@
   background: rgb(255 255 255 / 0.065);
 }
 
-.admin-subnav-link[class*="bg-primary"] {
+.admin-subnav-link[class~="bg-primary"] {
   color: #a7f3c0;
   background: rgb(34 197 94 / 0.12);
 }
@@ -752,7 +785,7 @@
 }
 
 .admin-main :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
-  border-radius: 11px;
+  border-radius: var(--ds-radius-control);
   border-color: hsl(var(--border));
   background-color: hsl(var(--card) / 0.94);
 }
@@ -767,122 +800,117 @@
 }
 
 .dark .admin-sidebar {
-  border-color: rgb(255 255 255 / 0.075);
-  background: linear-gradient(165deg, #1b2029 0%, #151a22 100%);
+  border-color: var(--cs-border);
+  background: var(--cs-bg);
+}
+
+.dark .admin-sidebar > div:first-child {
+  border-color: var(--cs-border);
+  background: var(--cs-bg);
+}
+
+.dark .admin-sidebar > div:first-child :is(span, p) {
+  color: var(--cs-text);
+}
+
+.dark .admin-sidebar > div:first-child p,
+.dark .admin-nav-link,
+.dark .admin-subnav-link,
+.dark .admin-sidebar-scroll nav:last-child a {
+  color: var(--cs-text-secondary);
+}
+
+.dark .admin-nav-link svg,
+.dark .admin-sidebar-scroll > div:not(:first-child) {
+  color: var(--cs-text-muted);
 }
 
 .dark .admin-shell {
-  --admin-action-bg: #303b49;
-  --admin-action-hover: #3d4a5c;
-  --admin-action-border: #526075;
-  --admin-action-text: #e7edf4;
-  --background: 230 7% 8%;
-  --foreground: 220 14% 93%;
-  --card: 230 6% 11%;
-  --card-foreground: 220 14% 93%;
-  --popover: 230 6% 12%;
-  --popover-foreground: 220 14% 93%;
-  --secondary: 230 6% 15%;
-  --secondary-foreground: 220 14% 93%;
-  --muted: 230 6% 15%;
-  --muted-foreground: 220 8% 66%;
-  --border: 225 5% 19%;
-  --input: 225 5% 22%;
+  --admin-action-bg: var(--cs-raised);
+  --admin-action-hover: var(--cs-hover);
+  --admin-action-border: var(--cs-border-strong);
+  --admin-action-text: var(--cs-text);
 }
 
-/* One restrained action palette throughout the admin workspace. Status badges
-   keep their semantic colors, while filled action buttons use muted slate. */
-.admin-shell :is(button, a):is(
-  .admin-action, [class~="bg-primary"],
-  [class~="bg-rose-500"], [class~="bg-rose-600"], [class~="bg-red-500"], [class~="bg-red-600"],
-  [class~="bg-purple-500"], [class~="bg-purple-600"], [class~="bg-violet-600"],
-  [class~="bg-blue-500"], [class~="bg-blue-600"], [class~="bg-indigo-600"],
-  [class~="bg-emerald-500"], [class~="bg-emerald-600"], [class~="bg-green-500"], [class~="bg-green-600"],
-  [class~="bg-amber-400"], [class~="bg-amber-500"], [class~="bg-amber-600"], [class~="bg-orange-500"]
-) {
+/* Only explicitly secondary admin actions use the shared neutral treatment.
+   Primary and danger buttons retain their semantic color. */
+.admin-shell :is(button, a).admin-action {
   color: var(--admin-action-text);
   background: var(--admin-action-bg);
   border: 1px solid var(--admin-action-border);
-  box-shadow: 0 2px 5px rgb(0 0 0 / 0.12), inset 0 1px 0 rgb(255 255 255 / 0.06);
+  box-shadow: none;
 }
-.admin-shell :is(button, a):is(.admin-action, [class~="bg-primary"],
-  [class~="bg-rose-500"], [class~="bg-rose-600"], [class~="bg-red-500"], [class~="bg-red-600"],
-  [class~="bg-purple-500"], [class~="bg-purple-600"], [class~="bg-violet-600"],
-  [class~="bg-blue-500"], [class~="bg-blue-600"], [class~="bg-indigo-600"],
-  [class~="bg-emerald-500"], [class~="bg-emerald-600"], [class~="bg-green-500"], [class~="bg-green-600"],
-  [class~="bg-amber-400"], [class~="bg-amber-500"], [class~="bg-amber-600"], [class~="bg-orange-500"]
-):hover:not(:disabled) {
+.admin-shell :is(button, a).admin-action:hover:not(:disabled) {
   background: var(--admin-action-hover);
-  border-color: #70829a;
+  border-color: var(--cs-border-strong, #444746);
 }
 .admin-shell .admin-action:focus-visible {
-  outline: 2px solid #94a3b8;
+  outline: 2px solid var(--cs-brand, #22c55e);
   outline-offset: 3px;
 }
 
-.dark .admin-main {
-  background:
-    radial-gradient(ellipse at 3% 0%, hsl(202 88% 48% / 0.055), transparent 34rem),
-    radial-gradient(ellipse at 97% 0%, hsl(148 60% 38% / 0.05), transparent 32rem),
-    hsl(var(--background));
-}
-
 .dark .admin-main :is(.stat-card, .action-tile, .activity-section, [data-slot="card"], article) {
-  background-color: hsl(var(--card) / 0.92);
+  background-color: var(--cs-surface);
   box-shadow: 0 8px 24px -20px rgb(0 0 0 / 0.72);
 }
 
 .dark .admin-shell > div > header {
-  border-color: rgb(255 255 255 / 0.075);
-  background: linear-gradient(145deg, rgb(28 29 33 / 0.96), rgb(21 22 25 / 0.94));
+  border-color: var(--cs-border);
+  background: var(--cs-bg);
   box-shadow: 0 12px 34px -26px rgb(0 0 0 / 0.9), inset 0 1px 0 rgb(255 255 255 / 0.035);
 }
 
 .dark .admin-main {
-  border-color: rgb(255 255 255 / 0.06);
-  background:
-    radial-gradient(ellipse at 4% 0%, rgb(75 111 156 / 0.055), transparent 36rem),
-    radial-gradient(ellipse at 100% 8%, rgb(64 125 86 / 0.045), transparent 34rem),
-    #141518;
+  border-color: var(--cs-border);
+  background: var(--cs-bg);
 }
 
 .dark .admin-main :is(div, section, article, button, a, [data-slot="card"])[class*="rounded-"][class*="border"][class*="bg-card"],
 .dark .admin-main :is(.stat-card, .action-tile, .activity-section, [data-slot="card"], article) {
-  border-color: rgb(255 255 255 / 0.075);
-  border-radius: 20px;
-  background-color: rgb(27 28 32 / 0.88) !important;
-  background-image:
-    linear-gradient(140deg, rgb(255 255 255 / 0.035), transparent 40%, rgb(255 255 255 / 0.012)),
-    radial-gradient(ellipse at 0% 0%, rgb(99 136 177 / 0.055), transparent 56%);
-  box-shadow:
-    0 18px 42px -34px rgb(0 0 0 / 0.85),
-    0 2px 8px -5px rgb(0 0 0 / 0.64),
-    inset 0 1px 0 rgb(255 255 255 / 0.055);
-  -webkit-backdrop-filter: blur(18px) saturate(120%);
-  backdrop-filter: blur(18px) saturate(120%);
+  border-color: var(--cs-border);
+  border-radius: var(--ds-radius-card);
+  background-color: var(--cs-surface) !important;
+  background-image: none;
+  box-shadow: var(--ds-shadow-card);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 .dark .admin-main :is(div, section, article, button, a, [data-slot="card"])[class*="rounded-"][class*="border"][class*="bg-card"]:hover,
 .dark .admin-main :is(.stat-card, .action-tile, .activity-section, [data-slot="card"], article):hover {
-  border-color: rgb(255 255 255 / 0.13);
-  background-color: rgb(31 32 36 / 0.94) !important;
-  box-shadow:
-    0 22px 48px -34px rgb(0 0 0 / 0.9),
-    0 5px 14px -8px rgb(0 0 0 / 0.65),
-    inset 0 1px 0 rgb(255 255 255 / 0.075);
+  border-color: var(--cs-border-strong);
+  background-color: var(--cs-hover) !important;
+  box-shadow: var(--ds-shadow-card);
 }
 
 .dark .admin-main :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea) {
-  border-color: rgb(255 255 255 / 0.1);
-  background-color: rgb(20 21 24 / 0.92);
+  border-color: var(--cs-border);
+  background-color: var(--cs-surface);
 }
 
 .dark .admin-main thead {
-  background: rgb(255 255 255 / 0.035);
+  background: var(--cs-raised);
 }
 
 .dark .admin-main tbody tr:hover {
-  background: rgb(255 255 255 / 0.025);
+  background: var(--cs-hover);
+}
+
+.dark .admin-main .action-tile > [class*="bg-gradient-to-br"],
+.dark .admin-main [class*="bg-[radial-gradient"] {
+  background-image: none !important;
+}
+
+.dark .admin-nav-link[class~="bg-primary"],
+.dark .admin-subnav-link[class~="bg-primary"] {
+  background: var(--cs-raised);
+  border-color: var(--cs-border-strong);
+  color: var(--cs-text);
+}
+
+.dark .admin-nav-link:not([class~="bg-primary"]):hover,
+.dark .admin-subnav-link:not([class~="bg-primary"]):hover {
+  background: var(--cs-hover);
 }
 
 @media (max-width: 900px) {
@@ -952,3 +980,285 @@
     border-radius: 17px;
   }
 }
+
+/* Legacy dark-only utilities; preserve light mode and the Home hero. */
+html.dark :is(body:not(:has(.codeskill-home)), .codeskill-home > section:not(:first-child)) :is(
+  [class*="bg-slate-950"], [class*="bg-blue-950"],
+  [class*="bg-zinc-950"], [class*="bg-[#0B0F1A]"],
+  [class*="bg-[#0A0A0A]"]
+) {
+  background-color: var(--cs-bg) !important;
+}
+
+html.dark :is(body:not(:has(.codeskill-home)), .codeskill-home > section:not(:first-child)) :is(
+  [class*="bg-slate-900"], [class*="bg-blue-900"], [class*="bg-sky-800"],
+  [class*="bg-zinc-900"], [class*="bg-gray-800"],
+  [class*="bg-[#111722]"], [class*="bg-[#18181B]"],
+  [class*="bg-[#1F2937]"], [class*="bg-[#242428]"],
+  [class*="bg-[#252522]"], [class*="bg-[#1D1D1A]"],
+  [class*="bg-[#121212]"], [class*="bg-[#141414]"]
+) {
+  background-color: var(--cs-surface) !important;
+}
+
+html.dark :is(body:not(:has(.codeskill-home)), .codeskill-home > section:not(:first-child)) :is(
+  [class*="bg-slate-800"], [class*="bg-zinc-800"],
+  [class*="bg-[#27272A]"], [class*="bg-[#303238]"],
+  [class*="bg-[#374151]"]
+) {
+  background-color: var(--cs-raised) !important;
+}
+
+html.dark :is(body:not(:has(.codeskill-home)), .codeskill-home > section:not(:first-child)) :is(
+  input:not([type="checkbox"]):not([type="radio"]),
+  select, textarea
+) {
+  background-color: var(--cs-surface);
+  color: var(--cs-text);
+  border-color: var(--cs-border);
+}
+
+html.dark :is(body:not(:has(.codeskill-home)), .codeskill-home > section:not(:first-child)) :is(input, textarea)::placeholder {
+  color: var(--cs-text-muted);
+}
+
+html.dark :is(body:not(:has(.codeskill-home)), .codeskill-home > section:not(:first-child)) :is(
+  [class*="dark:bg-[#121212]"],
+  [class*="dark:bg-[#0a0a0a]"]
+) {
+  background-color: var(--cs-bg) !important;
+}
+
+html.dark :is(body:not(:has(.codeskill-home)), .codeskill-home > section:not(:first-child)) [class*="dark:bg-[#141414]"] {
+  background-color: var(--cs-surface) !important;
+}
+
+html.dark :is(body:not(:has(.codeskill-home)), .codeskill-home > section:not(:first-child)) .codeskill-global-glow {
+  background-color: transparent !important;
+}
+
+html.dark :is(body:not(:has(.codeskill-home)), .codeskill-home > section:not(:first-child)) :is(
+  [class~="modal-backdrop"],
+  [data-slot="dialog-overlay"],
+  [class*="fixed"][class*="inset-0"][class*="bg-slate-950/"]
+) {
+  background-color: rgb(0 0 0 / 0.6) !important;
+  background-image: none !important;
+}
+
+html.dark:not(:has(.codeskill-home)),
+html.dark :is(body:not(:has(.codeskill-home)), .codeskill-home > section:not(:first-child)) * {
+  scrollbar-color: var(--cs-border-strong) var(--cs-bg);
+}
+
+html.dark :is(body:not(:has(.codeskill-home)), .codeskill-home > section:not(:first-child)) ::-webkit-scrollbar-track {
+  background: var(--cs-bg);
+}
+
+html.dark :is(body:not(:has(.codeskill-home)), .codeskill-home > section:not(:first-child)) ::-webkit-scrollbar-thumb {
+  background: var(--cs-border-strong);
+}
+
+.dark .monaco-editor,
+.dark .monaco-editor .monaco-editor-background,
+.dark .cm-editor,
+.dark .cm-scroller {
+  background-color: var(--cs-surface) !important;
+}
+
+.dark .monaco-editor .margin,
+.dark .cm-gutters {
+  background-color: var(--cs-bg) !important;
+}
+
+/* Dark visual compatibility for legacy page-level color utilities. The
+   Home hero is excluded so its green identity stays intact. */
+html.dark :is(body:not(:has(.codeskill-home)), .codeskill-home > section:not(:first-child)) :is(
+  [class*="bg-purple-"], [class*="bg-pink-"], [class*="bg-orange-"],
+  [class*="bg-blue-"], [class*="bg-sky-"], [class*="bg-indigo-"],
+  [class*="bg-cyan-"], [class*="bg-teal-"], [class*="bg-violet-"]
+) {
+  background-color: color-mix(in srgb, var(--cs-raised) 55%, transparent) !important;
+  background-image: none !important;
+}
+
+html.dark :is(body:not(:has(.codeskill-home)), .codeskill-home > section:not(:first-child)) :is(
+  [class*="text-purple-"], [class*="text-pink-"], [class*="text-orange-"],
+  [class*="text-blue-"], [class*="text-sky-"], [class*="text-indigo-"],
+  [class*="text-cyan-"], [class*="text-teal-"], [class*="text-violet-"]
+) {
+  color: var(--cs-text-secondary) !important;
+}
+
+html.dark :is(body:not(:has(.codeskill-home)), .codeskill-home > section:not(:first-child)) :is(
+  [class*="border-purple-"], [class*="border-pink-"], [class*="border-orange-"],
+  [class*="border-blue-"], [class*="border-sky-"], [class*="border-indigo-"],
+  [class*="border-cyan-"], [class*="border-teal-"], [class*="border-violet-"]
+) {
+  border-color: var(--cs-border) !important;
+}
+
+html.dark :is(body:not(:has(.codeskill-home)), .codeskill-home > section:not(:first-child)) :is(
+  [class*="shadow-purple-"], [class*="shadow-pink-"], [class*="shadow-orange-"],
+  [class*="shadow-blue-"], [class*="shadow-sky-"], [class*="shadow-indigo-"],
+  [class*="shadow-cyan-"], [class*="shadow-teal-"], [class*="shadow-violet-"]
+) {
+  box-shadow: var(--ds-shadow-card) !important;
+}
+
+html.dark :is(body:not(:has(.codeskill-home)), .codeskill-home > section:not(:first-child)) :is(
+  [class*="ring-purple-"], [class*="ring-pink-"], [class*="ring-orange-"],
+  [class*="ring-blue-"], [class*="ring-sky-"], [class*="ring-indigo-"],
+  [class*="ring-cyan-"], [class*="ring-teal-"], [class*="ring-violet-"]
+) {
+  --tw-ring-color: var(--cs-brand) !important;
+}
+
+html.dark :is(body:not(:has(.codeskill-home)), .codeskill-home > section:not(:first-child)) :is(
+  [class*="fill-purple-"], [class*="fill-pink-"], [class*="fill-orange-"],
+  [class*="fill-blue-"], [class*="fill-sky-"], [class*="fill-indigo-"],
+  [class*="fill-cyan-"], [class*="fill-teal-"], [class*="fill-violet-"],
+  [class*="stroke-purple-"], [class*="stroke-pink-"], [class*="stroke-orange-"],
+  [class*="stroke-blue-"], [class*="stroke-sky-"], [class*="stroke-indigo-"],
+  [class*="stroke-cyan-"], [class*="stroke-teal-"], [class*="stroke-violet-"]
+) {
+  color: var(--cs-text-secondary) !important;
+  fill: currentColor;
+  stroke: currentColor;
+}
+
+/* Shared legacy surfaces used by the coding workspace and question editor. */
+html.dark :is(body:not(:has(.codeskill-home)), .codeskill-home > section:not(:first-child)) :is(
+  [class*="bg-[#0A0A0A]"], [class*="bg-[#0B0F1A]"], [class*="bg-[#0a0a0a]"],
+  [class*="bg-[#0B1220]"], [class*="bg-[#111722]"], [class*="bg-[#111827]"],
+  [class*="bg-[#121212]"]
+) {
+  background-color: var(--cs-bg) !important;
+}
+html.dark :is(body:not(:has(.codeskill-home)), .codeskill-home > section:not(:first-child)) :is(
+  [class*="bg-[#18181B]"], [class*="bg-[#1D1D1A]"], [class*="bg-[#1E1E1E]"],
+  [class*="bg-[#1F2937]"], [class*="bg-[#242428]"], [class*="bg-[#252522]"],
+  [class*="bg-[#252525]"]
+) {
+  background-color: var(--cs-surface) !important;
+}
+html.dark :is(body:not(:has(.codeskill-home)), .codeskill-home > section:not(:first-child)) :is(
+  [class*="bg-[#27272A]"], [class*="bg-[#303238]"], [class*="bg-[#374151]"]
+) {
+  background-color: var(--cs-hover) !important;
+}
+html.dark :is(body:not(:has(.codeskill-home)), .codeskill-home > section:not(:first-child)) :is(
+  [class*="border-[#1F2937]"], [class*="border-[#3F3F46]"],
+  [class*="border-[#4B5563]"], [class*="border-[#374151]"]
+) {
+  border-color: var(--cs-border) !important;
+}
+html.dark :is(body:not(:has(.codeskill-home)), .codeskill-home > section:not(:first-child)) :is(
+  [class~="text-[#D1D5DB]"], [class~="text-[#E5E7EB]"], [class~="text-[#F3F4F6]"],
+  [class~="text-[#F4F4F5]"], [class~="text-[#FFFFFF]"], [class~="text-white"]
+) {
+  color: var(--cs-text) !important;
+}
+
+/* Keep the common content motion subtle and consistent. */
+html.dark :is(body:not(:has(.codeskill-home)), .codeskill-home > section:not(:first-child)) :is(button, a, input, select, textarea, [data-slot="card"], [role="tab"]) {
+  transition-duration: 180ms;
+  transition-timing-function: ease;
+}
+
+html.dark :is(body:not(:has(.codeskill-home)), .codeskill-home > section:not(:first-child)) :is(
+  [class*="from-purple-"], [class*="via-purple-"], [class*="to-purple-"],
+  [class*="from-pink-"], [class*="via-pink-"], [class*="to-pink-"],
+  [class*="from-orange-"], [class*="via-orange-"], [class*="to-orange-"],
+  [class*="from-blue-"], [class*="via-blue-"], [class*="to-blue-"],
+  [class*="from-sky-"], [class*="via-sky-"], [class*="to-sky-"],
+  [class*="from-indigo-"], [class*="via-indigo-"], [class*="to-indigo-"],
+  [class*="from-cyan-"], [class*="via-cyan-"], [class*="to-cyan-"],
+  [class*="from-teal-"], [class*="via-teal-"], [class*="to-teal-"],
+  [class*="from-violet-"], [class*="via-violet-"], [class*="to-violet-"]
+) {
+  background-image: none !important;
+}
+
+html.dark :is(body:not(:has(.codeskill-home)), .codeskill-home > section:not(:first-child)) :is(
+  [class*="blur-"][class*="bg-purple-"], [class*="blur-"][class*="bg-pink-"],
+  [class*="blur-"][class*="bg-orange-"], [class*="blur-"][class*="bg-blue-"],
+  [class*="blur-"][class*="bg-sky-"], [class*="blur-"][class*="bg-indigo-"],
+  [class*="blur-"][class*="bg-cyan-"], [class*="blur-"][class*="bg-teal-"],
+  [class*="blur-"][class*="bg-violet-"]
+) {
+  background-color: transparent !important;
+}
+
+/* Primary actions keep the brand green even where legacy admin styles used
+   to flatten all filled buttons to gray. */
+html.dark :is(body:not(:has(.codeskill-home)), .codeskill-home > section:not(:first-child)) .admin-shell :is(button, a)[class~="bg-primary"] {
+  color: hsl(var(--primary-foreground)) !important;
+  background-color: hsl(var(--primary)) !important;
+  border-color: hsl(var(--primary) / 0.35) !important;
+}
+html.dark :is(body:not(:has(.codeskill-home)), .codeskill-home > section:not(:first-child)) .admin-shell :is(button, a)[class~="bg-primary"]:hover:not(:disabled) {
+  background-color: hsl(var(--primary) / 0.88) !important;
+}
+
+/* Preserve inherited colors only inside the original Home hero. */
+html.dark .codeskill-home > section:first-child {
+    color-scheme: dark;
+    --background: 222 47% 7%;
+    --foreground: 210 40% 96%;
+    --card: 222 39% 10%;
+    --card-foreground: 210 40% 96%;
+    --popover: 222 39% 10%;
+    --popover-foreground: 210 40% 96%;
+    --primary: 145 70% 48%;
+    --primary-foreground: 222 47% 10%;
+    --secondary: 217 33% 15%;
+    --secondary-foreground: 210 40% 96%;
+    --muted: 217 33% 15%;
+    --muted-foreground: 215 20% 68%;
+    --accent: 145 30% 15%;
+    --accent-foreground: 145 70% 68%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 100%;
+    --border: 215 28% 19%;
+    --input: 215 28% 22%;
+    --skeleton: 0 0% 14%;
+    --btn-border: 0 0% 18%;
+    --ring: 145 70% 48%;
+    --sidebar: 222 44% 8%;
+    --sidebar-foreground: 210 40% 96%;
+    --sidebar-border: 215 28% 17%;
+    --sidebar-accent: 145 30% 15%;
+    --sidebar-accent-foreground: 145 70% 68%;
+  }
+
+
+/* Home keeps its existing hero; subsequent sections share product surfaces. */
+html.dark .codeskill-home > section:not(:first-child) {
+  background-color: var(--cs-bg);
+  border-color: var(--cs-border);
+}
+html.dark .codeskill-home > section:not(:first-child) [class*="bg-[radial-gradient"],
+html.dark .codeskill-home > section:not(:first-child) [class*="bg-gradient-"] {
+  background-image: none;
+}
+html.dark:has(.codeskill-home) header > div {
+  background: var(--cs-surface);
+  border-color: var(--cs-border);
+}
+html.dark .codeskill-home > section:not(:first-child) :is(input, select, textarea) {
+  background: var(--cs-surface);
+  color: var(--cs-text);
+  border-color: var(--cs-border);
+}
+
+html.dark .codeskill-home > section:not(:first-child) :is([class*="border-slate-"], [class*="border-white/"], [class*="border-gray-"]) {
+  border-color: var(--cs-border);
+}
+html.dark .codeskill-home > section:not(:first-child) :is([class*="text-slate-100"], [class*="text-slate-200"]) { color: var(--cs-text); }
+html.dark .codeskill-home > section:not(:first-child) [class*="text-slate-300"] { color: var(--cs-text-secondary); }
+html.dark .codeskill-home > section:not(:first-child) :is([class*="text-slate-400"], [class*="text-slate-500"]) { color: var(--cs-text-muted); }

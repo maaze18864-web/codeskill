@@ -581,6 +581,7 @@ function QuestionsAdminContent() {
           selectedQuestionIds={selectedQuestionIds}
           onToggleQuestion={handleToggleQuestion}
           onTogglePage={handleTogglePage}
+          onClearSelection={() => setSelectedQuestionIds([])}
           onBulkDelete={handleBulkDelete}
           deletingQuestions={deletingQuestions}
           onBulkEdit={() => setBulkEditOpen(true)}
@@ -624,8 +625,8 @@ function QuestionsAdminContent() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {Array.isArray(banks) && banks.map((bank) => (
-                <div key={bank._id || bank.id || Math.random()} className="bg-card border border-border p-5 rounded-xl hover:border-amber-500/40 transition-all flex flex-col justify-between">
+              {Array.isArray(banks) && banks.map((bank, index) => (
+                <div key={bank._id || bank.id || (bank.name ? `bank-${bank.name}` : `bank-${index}`)} className="bg-card border border-border p-5 rounded-xl hover:border-amber-500/40 transition-all flex flex-col justify-between">
                   <div>
                     <div className="flex items-start justify-between gap-2">
                       <h3 className="font-semibold text-foreground text-base">{bank.name}</h3>
@@ -673,8 +674,8 @@ function QuestionsAdminContent() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {Array.isArray(codingProblems) && codingProblems.map((prob) => (
-                <tr key={prob._id || prob.id || Math.random()} className="hover:bg-muted/30">
+              {Array.isArray(codingProblems) && codingProblems.map((prob, index) => (
+                <tr key={prob._id || prob.id || prob.slug || (prob.title ? `prob-${prob.title}` : `prob-${index}`)} className="hover:bg-muted/30">
                   <td className="px-6 py-4 font-medium text-foreground">
                     <Link href={`/problems/${prob.slug}`} target="_blank" className="hover:underline flex items-center gap-1.5">
                       {prob.title}

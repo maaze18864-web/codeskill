@@ -73,6 +73,12 @@ variable "target_group_name" {
   default     = ""
 }
 
+variable "backend_stickiness_enabled" {
+  description = "Enable stickiness on backend target group"
+  type        = bool
+  default     = false
+}
+
 variable "tags" {
   description = "Resource tags"
   type        = map(string)

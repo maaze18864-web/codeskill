@@ -18,8 +18,9 @@ export class RedisService implements OnModuleDestroy {
       commandTimeout: 1000,
       maxRetriesPerRequest: 1,
       retryStrategy(times: number) {
-        if (times > 3) return null;
-        const delay = Math.min(times * 100, 1000);
+        // Continuous exponential backoff with jitter, capped at 3000ms. Never return null to avoid permanent client death (ISSUE-RES-001).
+        const jitter = Math.floor(Math.random() * 200);
+        const delay = Math.min(Math.pow(2, Math.min(times, 8)) * 50 + jitter, 3000);
         return delay;
       },
     };
@@ -45,9 +46,15 @@ export class RedisService implements OnModuleDestroy {
         : [{ host: options.host, port: options.port }];
 
       this.client = new Redis.Cluster(clusterHosts, {
+        enableOfflineQueue: false,
         redisOptions: {
           password: options.password || undefined,
           tls: useTls ? {} : undefined,
+          maxRetriesPerRequest: 1,
+        },
+        clusterRetryStrategy(times: number) {
+          const jitter = Math.floor(Math.random() * 200);
+          return Math.min(Math.pow(2, Math.min(times, 8)) * 50 + jitter, 3000);
         },
       });
     } else if (url) {

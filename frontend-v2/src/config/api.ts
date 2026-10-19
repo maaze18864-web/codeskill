@@ -611,6 +611,28 @@ export const adminAssessmentsAPI = {
   updateStatus: (id: string, status: string) => api.put(`/admin/assessments/${id}/status`, { status }),
   delete: (id: string) => api.delete(`/admin/assessments/${id}`),
   getResults: (id: string) => api.get(`/admin/assessments/${id}/results`),
+  getAttemptReport: (attemptId: string) =>
+    api.get(`/reports/assessment-attempt/${encodeURIComponent(attemptId)}`, { responseType: "blob" }),
+};
+
+export const adminBugsAPI = {
+  getAll: (params?: { search?: string; sort?: "newest" | "oldest" | "priority" }) =>
+    api.get("/admin/bugs", { params }),
+  getById: (id: string) => api.get(`/admin/bugs/${id}`),
+  create: (data: FormData) =>
+    api.post("/admin/bugs", data, { headers: { "Content-Type": "multipart/form-data" } }),
+  assign: (id: string, assigneeName: string) =>
+    api.put(`/admin/bugs/${id}/assign`, { assigneeName }),
+  updateStatus: (id: string, status: "fixed" | "new") =>
+    api.put(`/admin/bugs/${id}/status`, { status }),
+  updateBug: (id: string, data: { title: string; description: string }) =>
+    api.put(`/admin/bugs/${id}`, data),
+  addImages: (id: string, data: FormData) =>
+    api.post(`/admin/bugs/${id}/images`, data, { headers: { "Content-Type": "multipart/form-data" } }),
+  addComment: (id: string, data: { commenterName: string; text: string }) =>
+    api.post(`/admin/bugs/${id}/comments`, data),
+  updateComment: (id: string, commentId: string, text: string) =>
+    api.put(`/admin/bugs/${id}/comments/${commentId}`, { text }),
 };
 
 export const studentAssessmentsAPI = {

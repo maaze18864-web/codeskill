@@ -13,6 +13,7 @@ import { applyContestSecurityReattemptMigration } from './migrations/contest-sec
 import { applyAssessmentAudienceTargetingMigration } from './migrations/assessment-audience-targeting';
 import { applyAssessmentProctorCapturesMigration } from './migrations/assessment-proctor-captures';
 import { applyAssessmentProctoringModesMigration } from './migrations/assessment-proctoring-modes';
+import { applyBugReportsMigration } from './migrations/bug-reports';
 
 export function practiceSubmissionMigrationOptions(): DataSourceOptions {
   const postgres = databaseConfig().postgres;
@@ -62,6 +63,7 @@ export async function runPracticeSubmissionSourceMigration(): Promise<void> {
         await applyAssessmentAudienceTargetingMigration(queryRunner);
         await applyAssessmentProctorCapturesMigration(queryRunner);
         await applyAssessmentProctoringModesMigration(queryRunner);
+        await applyBugReportsMigration(queryRunner);
         await queryRunner.commitTransaction();
       } catch (error) {
         await queryRunner.rollbackTransaction();

@@ -62,6 +62,29 @@ resource "aws_service_discovery_service" "judge0" {
     routing_policy = "MULTIVALUE"
   }
 
+  tags = merge(
+    var.tags,
+    {
+      Name    = "judge0-discovery-service"
+      Service = "judge0"
+    }
+  )
+}
+
+resource "aws_service_discovery_service" "backend" {
+  name = "backend"
+
+  dns_config {
+    namespace_id = aws_service_discovery_private_dns_namespace.internal.id
+
+    dns_records {
+      ttl  = 10
+      type = "A"
+    }
+
+    routing_policy = "MULTIVALUE"
+  }
+
   health_check_custom_config {
     failure_threshold = 1
   }
@@ -69,8 +92,8 @@ resource "aws_service_discovery_service" "judge0" {
   tags = merge(
     var.tags,
     {
-      Name    = "judge0-discovery-service"
-      Service = "judge0"
+      Name    = "backend-discovery-service"
+      Service = "backend"
     }
   )
 }

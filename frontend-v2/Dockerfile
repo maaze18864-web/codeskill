@@ -20,10 +20,12 @@ COPY . .
 # Build Arguments for client-side environment variables baked into bundles
 ARG NEXT_PUBLIC_API_URL=https://codeskill.novaserve.cloud/api
 ARG NEXT_PUBLIC_SOCKET_URL=https://codeskill.novaserve.cloud
+ARG NEXT_PUBLIC_SITE_URL=https://codeskill.novaserve.cloud
 ARG NEXT_PUBLIC_GOOGLE_CLIENT_ID=968191151730-mglf3rq4pldoqqhhcrbqfbt9g2j9n8o6.apps.googleusercontent.com
 
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 ENV NEXT_PUBLIC_SOCKET_URL=$NEXT_PUBLIC_SOCKET_URL
+ENV NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL
 ENV NEXT_PUBLIC_GOOGLE_CLIENT_ID=$NEXT_PUBLIC_GOOGLE_CLIENT_ID
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV NODE_ENV=production

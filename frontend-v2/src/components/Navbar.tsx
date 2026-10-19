@@ -106,9 +106,9 @@ export function Navbar() {
     <>
       <header className="fixed top-2.5 sm:top-3 left-0 right-0 z-50 px-3 sm:px-6 max-w-[1440px] mx-auto transition-all duration-200">
         <div
-          className={`w-full bg-background/95 dark:bg-[#121212]/96 backdrop-blur-md border border-black/8 dark:border-white/10 rounded-2xl shadow-[0_6px_24px_rgba(0,0,0,0.05)] dark:shadow-[0_8px_30px_rgba(0,0,0,0.30)] px-3 sm:px-4 lg:px-5 h-[56px] flex items-center justify-between transition-all duration-200 ${
+          className={`w-full bg-background/95 dark:bg-card/95 backdrop-blur-md border border-black/8 dark:border-white/10 rounded-2xl shadow-[0_6px_24px_rgba(0,0,0,0.05)] dark:shadow-[0_8px_30px_rgba(0,0,0,0.30)] px-3 sm:px-4 lg:px-5 h-[56px] flex items-center justify-between transition-all duration-200 ${
             scrolled
-              ? "bg-background dark:bg-[#0a0a0a]/98 border-black/10 dark:border-white/15 shadow-[0_12px_36px_rgba(0,0,0,0.08)] dark:shadow-[0_12px_36px_rgba(0,0,0,0.45)]"
+              ? "bg-background dark:bg-card border-black/10 dark:border-white/15 shadow-[0_12px_36px_rgba(0,0,0,0.08)] dark:shadow-[0_12px_36px_rgba(0,0,0,0.45)]"
               : ""
           }`}
         >
@@ -176,7 +176,7 @@ export function Navbar() {
                   <Icon
                     className={`w-3.5 h-3.5 xl:w-4 xl:h-4 shrink-0 transition-colors duration-150 ${
                       isActive
-                        ? "text-primary dark:text-[#3B82F6]"
+                        ? "text-primary dark:text-primary"
                         : "text-muted-foreground group-hover:text-foreground dark:text-muted-foreground dark:group-hover:text-white"
                     }`}
                   />
@@ -185,7 +185,7 @@ export function Navbar() {
                   {isActive && (
                     <motion.span
                       layoutId="activeNavIndicator"
-                      className="absolute -bottom-[5px] left-3.5 right-3.5 h-[2px] bg-primary rounded-full shadow-[0_0_6px_rgba(37,99,235,0.4)]"
+                      className="absolute -bottom-[5px] left-3.5 right-3.5 h-[2px] bg-primary rounded-full shadow-[0_0_6px_rgba(34,197,94,0.2)]"
                       transition={{ type: "spring", stiffness: 380, damping: 30 }}
                     />
                   )}
@@ -288,7 +288,7 @@ export function Navbar() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -8, scale: 0.98 }}
               transition={{ duration: 0.18, ease: "easeOut" }}
-              className="fixed top-[66px] sm:top-[70px] right-3 sm:right-6 z-50 w-[calc(100vw-24px)] sm:w-[360px] max-w-sm max-h-[calc(100vh-85px)] overflow-y-auto bg-background/98 dark:bg-[#141414]/98 backdrop-blur-2xl border border-black/10 dark:border-white/12 rounded-2xl p-3.5 sm:p-4 shadow-[0_20px_50px_rgba(0,0,0,0.18)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.65)] flex flex-col gap-3 lg:hidden"
+              className="fixed top-[66px] sm:top-[70px] right-3 sm:right-6 z-50 w-[calc(100vw-24px)] sm:w-[360px] max-w-sm max-h-[calc(100vh-85px)] overflow-y-auto bg-background/98 dark:bg-card/95 backdrop-blur-2xl border border-black/10 dark:border-white/12 rounded-2xl p-3.5 sm:p-4 shadow-[0_20px_50px_rgba(0,0,0,0.18)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.65)] flex flex-col gap-3 lg:hidden"
             >
               <div className="flex flex-col gap-1">
                 <div className="px-3 py-1 text-[11px] font-bold uppercase tracking-wider text-muted-foreground/70">
@@ -314,7 +314,7 @@ export function Navbar() {
                     >
                       <Icon
                         className={`w-4 h-4 shrink-0 ${
-                          isActive ? "text-primary dark:text-[#3B82F6]" : "text-muted-foreground"
+                          isActive ? "text-primary dark:text-primary" : "text-muted-foreground"
                         }`}
                       />
                       <span className="truncate">{item.name}</span>

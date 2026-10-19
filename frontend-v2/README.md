@@ -33,6 +33,7 @@ npm ci --legacy-peer-deps
 cp .env.example .env.local
 ```
 Key environment variables:
+- `NEXT_PUBLIC_SITE_URL`: Canonical site domain for SEO, sitemap.xml, and robots.txt (defaults to `https://codeskill.novaserve.cloud`)
 - `NEXT_PUBLIC_API_URL`: Browser API endpoint (e.g., `http://localhost:5001/api`)
 - `INTERNAL_BACKEND_URL`: Server-side rewrite URL (e.g., `http://127.0.0.1:5001/api`)
 - `NEXT_PUBLIC_WS_URL`: WebSocket origin for real-time Socket.IO judge updates (e.g., `http://localhost:5001`)

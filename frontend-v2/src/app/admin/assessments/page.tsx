@@ -3,13 +3,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { 
-  Trophy, 
   Plus, 
   Search, 
   Clock, 
   Award, 
-  Users, 
-  CheckCircle2, 
   Copy, 
   Check, 
   BarChart3, 
@@ -23,7 +20,6 @@ import {
   GraduationCap
 } from "lucide-react";
 import { adminAssessmentsAPI } from "@/config/api";
-import { Spinner } from "@/components/ui/spinner";
 
 export default function AdminAssessmentsPage() {
   const [assessments, setAssessments] = useState<any[]>([]);
@@ -93,17 +89,9 @@ export default function AdminAssessmentsPage() {
               />
             </div>
             <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-xl font-bold tracking-tight text-foreground">
-                  Assessments & Examinations
-                </h1>
-                <span className="text-[10px] font-semibold px-2.5 py-0.5 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/25">
-                  Chandigarh University
-                </span>
-              </div>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Manage university examinations, availability triggers, scheduled timings, and proctoring policies.
-              </p>
+              <h1 className="text-xl font-bold tracking-tight text-foreground">
+                Assessments & Examinations
+              </h1>
             </div>
           </div>
         </div>
@@ -227,7 +215,7 @@ export default function AdminAssessmentsPage() {
                       title={isLive ? "Click to disable test (switch to draft)" : "Click to publish test (make available)"}
                     >
                       <span className={`w-1.5 h-1.5 rounded-full ${isLive ? "bg-emerald-400 animate-pulse" : "bg-muted-foreground"}`} />
-                      <span>{isLive ? "Live Available" : "Disabled / Draft"}</span>
+                      <span>{isLive ? "Live" : "Disabled / Draft"}</span>
                     </button>
                   </div>
 
@@ -254,23 +242,17 @@ export default function AdminAssessmentsPage() {
 
                   {/* Key Metrics */}
                   <div className="grid grid-cols-3 gap-2 py-4 my-4 border-y border-border/60 text-xs">
-                    <div className="space-y-0.5">
-                      <span className="text-muted-foreground flex items-center gap-1">
-                        <Clock className="w-3 h-3 text-primary" /> Duration
-                      </span>
-                      <p className="font-bold text-foreground">{test.durationMinutes} mins</p>
+                    <div className="flex items-center gap-1.5" aria-label={`Duration: ${test.durationMinutes} minutes`}>
+                      <Clock aria-hidden="true" className="w-3.5 h-3.5 text-muted-foreground" />
+                      <span className="font-semibold text-foreground">{test.durationMinutes} mins</span>
                     </div>
-                    <div className="space-y-0.5">
-                      <span className="text-muted-foreground flex items-center gap-1">
-                        <Award className="w-3 h-3 text-emerald-400" /> Total Marks
-                      </span>
-                      <p className="font-bold text-foreground">{test.totalMarks} pts</p>
+                    <div className="flex items-center gap-1.5" aria-label={`Total marks: ${test.totalMarks}`}>
+                      <Award aria-hidden="true" className="w-3.5 h-3.5 text-muted-foreground" />
+                      <span className="font-semibold text-foreground">{test.totalMarks} marks</span>
                     </div>
-                    <div className="space-y-0.5">
-                      <span className="text-muted-foreground flex items-center gap-1">
-                        <Layers className="w-3 h-3 text-primary" /> Questions
-                      </span>
-                      <p className="font-bold text-foreground">{test.questions?.length || 0} Qs</p>
+                    <div className="flex items-center gap-1.5" aria-label={`${test.questions?.length || 0} questions`}>
+                      <Layers aria-hidden="true" className="w-3.5 h-3.5 text-muted-foreground" />
+                      <span className="font-semibold text-foreground">{test.questions?.length || 0}Q</span>
                     </div>
                   </div>
 

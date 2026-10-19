@@ -4,6 +4,9 @@
 prometheus.scrape "codeskill_backend" {
   targets = [
     {
+      "__address__" = "127.0.0.1:5001",
+    },
+    {
       "__address__" = "localhost:5001",
     },
     {
@@ -20,7 +23,8 @@ prometheus.remote_write "grafanacloud" {
     url = "https://prometheus-prod-43-prod-ap-south-1.grafana.net/api/prom/push"
     basic_auth {
       username = "3666421"
-      password = sys.env("GRAFANA_CLOUD_API_TOKEN")
+      password = env("GRAFANA_CLOUD_API_TOKEN")
     }
   }
 }
+

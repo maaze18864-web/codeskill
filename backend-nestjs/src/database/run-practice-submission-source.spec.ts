@@ -1,5 +1,6 @@
 import { DataSource } from 'typeorm';
 import { applyPracticeSubmissionSourceMigration } from './migrations/practice-submission-source';
+import { applyBugReportsMigration } from './migrations/bug-reports';
 import { parseSubmissionShardingConfig } from './sharding/sharding.config';
 import {
   practiceSubmissionMigrationOptions,
@@ -12,10 +13,14 @@ jest.mock('typeorm', () => ({
 jest.mock('./migrations/practice-submission-source', () => ({
   applyPracticeSubmissionSourceMigration: jest.fn(),
 }));
+jest.mock('./migrations/bug-reports', () => ({
+  applyBugReportsMigration: jest.fn(),
+}));
 
 describe('practice submission source migration runner', () => {
   const DataSourceMock = jest.mocked(DataSource);
   const applyMigration = jest.mocked(applyPracticeSubmissionSourceMigration);
+  const applyBugsMigration = jest.mocked(applyBugReportsMigration);
 
   function setup() {
     const queryRunner = {
@@ -63,6 +68,10 @@ describe('practice submission source migration runner', () => {
       applyMigration.mock.invocationCallOrder[0],
     );
     expect(applyMigration).toHaveBeenCalledWith(queryRunner);
+    expect(applyBugsMigration).toHaveBeenCalledWith(queryRunner);
+    expect(applyBugsMigration.mock.invocationCallOrder[0]).toBeLessThan(
+      queryRunner.commitTransaction.mock.invocationCallOrder[0],
+    );
     expect(queryRunner.commitTransaction).toHaveBeenCalledTimes(1);
     expect(queryRunner.rollbackTransaction).not.toHaveBeenCalled();
     expect(queryRunner.release).toHaveBeenCalledTimes(1);
@@ -84,6 +93,18 @@ describe('practice submission source migration runner', () => {
     expect(queryRunner.commitTransaction).not.toHaveBeenCalled();
     expect(queryRunner.release).toHaveBeenCalledTimes(1);
     expect(dataSource.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it('rolls back when the bug tables cannot be migrated', async () => {
+    const { queryRunner } = setup();
+    applyBugsMigration.mockRejectedValueOnce(new Error('Bug schema failure'));
+
+    await expect(runPracticeSubmissionSourceMigration()).rejects.toThrow(
+      'Bug schema failure',
+    );
+
+    expect(queryRunner.rollbackTransaction).toHaveBeenCalledTimes(1);
+    expect(queryRunner.commitTransaction).not.toHaveBeenCalled();
   });
 
   it('preserves the primary submission snapshot when sharding is active', async () => {

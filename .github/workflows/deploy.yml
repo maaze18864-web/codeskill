@@ -28,8 +28,9 @@ env:
   FRONTEND_ASG: codeskill-frontend-asg
   BACKEND_ASG: codeskill-backend-asg
   FRONTEND_TG: codeskill-prod-tg
-  BACKEND_TG: codeskill-prod-be-tg
   ASG_INSTANCE_WARMUP: 120
+  ASG_MIN_HEALTHY_PERCENTAGE: 0
+  ASG_MAX_HEALTHY_PERCENTAGE: 100
 
 permissions:
   id-token: write # Required for AWS OIDC authentication
@@ -70,12 +71,16 @@ jobs:
         working-directory: ./backend-nestjs
         run: npm run build
 
-      - name: Backend Unit Tests
+      - name: Backend Runtime Module Validation
+        working-directory: ./backend-nestjs
+        run: npm run test:startup
+
+      - name: Backend Unit & Concurrency Tests
         working-directory: ./backend-nestjs
         run: npm test -- --maxWorkers=2
 
   validate-frontend:
-    name: Validate Frontend (Lint & Tests)
+    name: Validate Frontend (Lint, Type Check & Tests)
     if: github.event.inputs.service == 'all' || github.event.inputs.service == 'frontend' || github.event_name == 'push'
     runs-on: ubuntu-24.04
     steps:
@@ -96,6 +101,10 @@ jobs:
       - name: Frontend Lint Check
         working-directory: ./frontend-v2
         run: npm run lint -- --quiet
+
+      - name: Frontend Type Check
+        working-directory: ./frontend-v2
+        run: npm run typecheck
 
       - name: Frontend Unit Tests
         working-directory: ./frontend-v2
@@ -274,9 +283,9 @@ jobs:
           for attempt in {1..12}; do
             cmd=(aws autoscaling start-instance-refresh --auto-scaling-group-name "$asg" --region "${{ env.AWS_REGION }}" --query 'InstanceRefreshId' --output text)
             if [[ -n "$desired" ]]; then
-              cmd+=(--desired-configuration "$desired" --preferences "{\"MinHealthyPercentage\": 0, \"MaxHealthyPercentage\": 100, \"InstanceWarmup\": ${{ env.ASG_INSTANCE_WARMUP }}, \"SkipMatching\": false, \"AutoRollback\": true}")
+              cmd+=(--desired-configuration "$desired" --preferences "{\"MinHealthyPercentage\": ${{ env.ASG_MIN_HEALTHY_PERCENTAGE }}, \"MaxHealthyPercentage\": ${{ env.ASG_MAX_HEALTHY_PERCENTAGE }}, \"InstanceWarmup\": ${{ env.ASG_INSTANCE_WARMUP }}, \"SkipMatching\": false, \"AutoRollback\": true}")
             else
-              cmd+=(--preferences "{\"MinHealthyPercentage\": 0, \"MaxHealthyPercentage\": 100, \"InstanceWarmup\": ${{ env.ASG_INSTANCE_WARMUP }}, \"SkipMatching\": false, \"AutoRollback\": false}")
+              cmd+=(--preferences "{\"MinHealthyPercentage\": ${{ env.ASG_MIN_HEALTHY_PERCENTAGE }}, \"MaxHealthyPercentage\": ${{ env.ASG_MAX_HEALTHY_PERCENTAGE }}, \"InstanceWarmup\": ${{ env.ASG_INSTANCE_WARMUP }}, \"SkipMatching\": false, \"AutoRollback\": false}")
             fi
 
             out=$("${cmd[@]}" 2>&1) && { refresh_id="$out"; break; }
@@ -344,9 +353,9 @@ jobs:
           for attempt in {1..12}; do
             cmd=(aws autoscaling start-instance-refresh --auto-scaling-group-name "$asg" --region "${{ env.AWS_REGION }}" --query 'InstanceRefreshId' --output text)
             if [[ -n "$desired" ]]; then
-              cmd+=(--desired-configuration "$desired" --preferences "{\"MinHealthyPercentage\": 0, \"MaxHealthyPercentage\": 100, \"InstanceWarmup\": ${{ env.ASG_INSTANCE_WARMUP }}, \"SkipMatching\": false, \"AutoRollback\": true}")
+              cmd+=(--desired-configuration "$desired" --preferences "{\"MinHealthyPercentage\": ${{ env.ASG_MIN_HEALTHY_PERCENTAGE }}, \"MaxHealthyPercentage\": ${{ env.ASG_MAX_HEALTHY_PERCENTAGE }}, \"InstanceWarmup\": ${{ env.ASG_INSTANCE_WARMUP }}, \"SkipMatching\": false, \"AutoRollback\": true}")
             else
-              cmd+=(--preferences "{\"MinHealthyPercentage\": 0, \"MaxHealthyPercentage\": 100, \"InstanceWarmup\": ${{ env.ASG_INSTANCE_WARMUP }}, \"SkipMatching\": false, \"AutoRollback\": false}")
+              cmd+=(--preferences "{\"MinHealthyPercentage\": ${{ env.ASG_MIN_HEALTHY_PERCENTAGE }}, \"MaxHealthyPercentage\": ${{ env.ASG_MAX_HEALTHY_PERCENTAGE }}, \"InstanceWarmup\": ${{ env.ASG_INSTANCE_WARMUP }}, \"SkipMatching\": false, \"AutoRollback\": false}")
             fi
 
             out=$("${cmd[@]}" 2>&1) && { refresh_id="$out"; break; }
@@ -381,7 +390,7 @@ jobs:
             refreshes+=("${{ env.BACKEND_ASG }}:$BACKEND_REFRESH_ID")
           fi
 
-          for attempt in {1..160}; do
+          for attempt in {1..80}; do
             pending=0
             for refresh in "${refreshes[@]}"; do
               asg="${refresh%%:*}"
@@ -392,7 +401,13 @@ jobs:
                 --region "${{ env.AWS_REGION }}" \
                 --query 'InstanceRefreshes[0].[Status,PercentageComplete,StatusReason]' --output text || echo "Unknown 0 Unknown")
               read -r status pct reason <<< "$info"
-              echo "[Attempt $attempt/160] $asg ($refresh_id): status=$status, progress=${pct:-0}%, reason=${reason:-none}"
+              echo "[Attempt $attempt/80] $asg ($refresh_id): status=$status, progress=${pct:-0}%, reason=${reason:-none}"
+              if [ "$attempt" -gt 4 ] && [ "${pct:-0}" -eq 0 ] && [ $((attempt % 4)) -eq 0 ]; then
+                act=$(aws autoscaling describe-scaling-activities --auto-scaling-group-name "$asg" --max-items 1 --region "${{ env.AWS_REGION }}" --query 'Activities[0].[StatusCode,StatusMessage]' --output text 2>/dev/null || echo "")
+                if [ -n "$act" ]; then
+                  echo "  [Diagnostic] Latest $asg scaling event: $act"
+                fi
+              fi
               case "$status" in
                 Successful) ;;
                 Pending|InProgress|Baking|CheckpointDelay) pending=1 ;;
@@ -403,8 +418,13 @@ jobs:
               echo "All Auto Scaling instance refreshes completed successfully."
               break
             fi
-            if [ "$attempt" -eq 160 ]; then
-              echo "Timed out waiting for Auto Scaling instance refreshes after 40 minutes." >&2
+            if [ "$attempt" -eq 80 ]; then
+              echo "Timed out waiting for Auto Scaling instance refreshes after 20 minutes." >&2
+              for refresh in "${refreshes[@]}"; do
+                asg="${refresh%%:*}"
+                echo "=== Recent Scaling Activities for $asg ==="
+                aws autoscaling describe-scaling-activities --auto-scaling-group-name "$asg" --max-items 5 --region "${{ env.AWS_REGION }}" --output table 2>/dev/null || true
+              done
               exit 1
             fi
             sleep 15

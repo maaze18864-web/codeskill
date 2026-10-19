@@ -171,6 +171,22 @@ describe('Admin password authentication security', () => {
     await expect(service.sendOtp({ email: admin.email })).rejects.toBeInstanceOf(BadRequestException);
     await expect(service.verifyOtp({ email: admin.email, code: '123456' })).rejects.toBeInstanceOf(BadRequestException);
   });
+
+  it('escapes SQL ILIKE wildcards (% and _) to prevent wildcard injection (ISSUE-SEC-002)', async () => {
+    await service.adminLogin({
+      email: 'admin%test_user\\',
+      password: correctPassword,
+    });
+    expect(repository.findOne).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: [
+          { email: expect.objectContaining({ _value: 'admin\\%test\\_user\\\\' }) },
+          { uid: expect.objectContaining({ _value: 'admin\\%test\\_user\\\\' }) },
+          { username: expect.objectContaining({ _value: 'admin\\%test\\_user\\\\' }) },
+        ],
+      }),
+    );
+  });
 });
 
 describe('Admin password login request validation', () => {

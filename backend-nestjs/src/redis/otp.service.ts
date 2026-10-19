@@ -10,6 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { createHmac, randomInt } from 'crypto';
 import { RedisService } from './redis.service';
 import { EmailService } from '../emails/email.service';
+import { OTP_TTL_SECONDS } from './otp.constants';
 
 /**
  * A code is only valid for the purpose it was issued for, so a password-reset
@@ -17,7 +18,7 @@ import { EmailService } from '../emails/email.service';
  */
 export type OtpPurpose = 'login' | 'password_reset' | 'admin_login';
 
-export const OTP_TTL_SECONDS = 300;
+export { OTP_TTL_SECONDS };
 export const OTP_COOLDOWN_SECONDS = 60;
 export const OTP_MAX_ATTEMPTS = 5;
 

@@ -97,6 +97,23 @@ it('merges global pagination in order, using ID to break timestamp ties', async 
   ).toEqual(['b', 'c']);
   expect(a.find).toHaveBeenCalledWith(expect.objectContaining({ take: 3 }));
   await expect(store.find()).rejects.toThrow('bounded pagination');
+  await expect(store.find({ skip: 2001, take: 10 })).rejects.toThrow('max offset 2000');
+});
+
+it('supports keyset cursor pagination across shards with constant take limit', async () => {
+  const { store, a, b } = setup();
+  a.find.mockResolvedValue([{ id: 'c', createdAt: new Date(20) }]);
+  b.find.mockResolvedValue([{ id: 'd', createdAt: new Date(10) }]);
+
+  const results = await store.find({
+    take: 2,
+    order: { createdAt: 'DESC' },
+    cursor: { createdAt: new Date(30), id: 'b' },
+  });
+  expect(results.map((r) => r.id)).toEqual(['c', 'd']);
+  // With cursor pagination, each shard only queries take (2) rows, not skip + take!
+  expect(a.find).toHaveBeenCalledWith(expect.objectContaining({ take: 2 }));
+  expect(b.find).toHaveBeenCalledWith(expect.objectContaining({ take: 2 }));
 });
 
 it('sums counts from all shards and hydrates users from the primary database', async () => {

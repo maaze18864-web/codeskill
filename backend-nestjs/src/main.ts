@@ -86,6 +86,13 @@ async function bootstrap() {
   });
 
   const app = await NestFactory.create(AppModule, { logger, bodyParser: false });
+
+  // Trust proxy for managed reverse proxy / AWS Application Load Balancer (ISSUE-SEC-003)
+  const expressApp = app.getHttpAdapter().getInstance();
+  if (typeof expressApp?.set === 'function') {
+    expressApp.set('trust proxy', 'loopback, linklocal, uniquelocal');
+  }
+
   // Screen captures are authenticated JPEG data URLs; allow the compressed
   // payload while keeping a bounded request size.
   app.use(json({ limit: '4mb' }));

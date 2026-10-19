@@ -202,6 +202,16 @@ export class PetService {
 
   private checkRateLimit(userId: string) {
     const now = Date.now();
+
+    // Bounded cleanup: prune expired user entries if map exceeds 500 entries to prevent memory leak
+    if (this.requests.size > 500) {
+      for (const [id, timestamps] of this.requests.entries()) {
+        if (!timestamps.some((time) => now - time < 60_000)) {
+          this.requests.delete(id);
+        }
+      }
+    }
+
     const recent = (this.requests.get(userId) || []).filter(
       (time) => now - time < 60_000,
     );

@@ -30,20 +30,14 @@ export function useDevToolsDetect({ enabled, onViolation }: UseDevToolsDetectOpt
 
     window.addEventListener("resize", checkWindowSize);
 
-    // Technique 2: Debugger statement check
-    const checkDebugger = setInterval(() => {
-      const start = performance.now();
-      debugger; // This halts execution if devtools is open
-      const end = performance.now();
-      
-      if (end - start > 100) {
-        onViolation("DevTools_DebuggerPaused");
-      }
-    }, 3000);
+    // Technique 2: Periodic dimension threshold check for undocked/docked DevTools
+    const checkInterval = setInterval(() => {
+      checkWindowSize();
+    }, 2000);
 
     return () => {
       window.removeEventListener("resize", checkWindowSize);
-      clearInterval(checkDebugger);
+      clearInterval(checkInterval);
     };
   }, [enabled, onViolation]);
 }

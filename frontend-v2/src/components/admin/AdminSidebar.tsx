@@ -18,6 +18,7 @@ import {
   BookOpen,
   BarChart3,
   CircleHelp,
+  Bug,
 } from "lucide-react";
 import gsap from "gsap";
 
@@ -68,6 +69,7 @@ const adminNavItems = [
   { name: "Results & Scores", href: "/admin/candidates", icon: BarChart3 },
   { name: "Contests", href: "/admin/contests", icon: Trophy },
   { name: "FAQ", href: "/admin/faq", icon: CircleHelp },
+  { name: "Bugs", href: "/admin/bugs", icon: Bug },
   { name: "Contest Results", href: "/admin/contest-results", icon: Award },
   { name: "Companies", href: "/admin/companies", icon: Building2 },
   { name: "Universities", href: "/admin/universities", icon: BookOpen },
@@ -75,7 +77,7 @@ const adminNavItems = [
 ];
 
 const teacherNavItems = adminNavItems.filter((item) =>
-  !["Companies", "Universities", "Settings"].includes(item.name),
+  !["Companies", "Universities", "Settings", "Bugs"].includes(item.name),
 );
 
 export function AdminSidebar({ portal = "admin" }: { portal?: "admin" | "teacher" }) {

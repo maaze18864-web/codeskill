@@ -3,6 +3,8 @@ import {
   Post,
   Param,
   Body,
+  Headers,
+  Req,
   UseGuards,
   HttpCode,
 } from '@nestjs/common';
@@ -21,11 +23,18 @@ export class ExamSecurityController {
     @Param('assessmentId') assessmentId: string,
     @CurrentUser('id') userId: string,
     @Body() body: any,
+    @Headers() headers: Record<string, string | undefined>,
+    @Req() req?: any,
   ) {
+    const fullUrl = req
+      ? `${req.protocol || 'https'}://${req.get?.('host') || headers?.host || 'localhost'}${req.originalUrl || req.url || ''}`
+      : undefined;
     return this.examSecurityService.initSecureSession(
       assessmentId,
       userId,
       body,
+      headers,
+      fullUrl,
     );
   }
 

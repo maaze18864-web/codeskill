@@ -8,7 +8,9 @@ import {
   S3Client,
   PutObjectCommand,
   DeleteObjectCommand,
+  GetObjectCommand,
 } from '@aws-sdk/client-s3';
+import { generateS3PresignedUrl } from './s3-presigner.util';
 import { randomUUID } from 'node:crypto';
 import * as path from 'path';
 
@@ -94,10 +96,55 @@ export class S3Service {
         ContentType: contentType,
         ServerSideEncryption: 'AES256',
       }));
+
+      // Return presigned URL when configured, or S3 direct URL fallback
+      try {
+        const presigned = await this.getPresignedUrl(key, 3600);
+        if (presigned) return presigned;
+      } catch (err) {
+        this.logger.debug?.('Falling back to direct S3 URL', err);
+      }
+
       return `https://${this.bucketName}.s3.${process.env.AWS_REGION || 'us-east-1'}.amazonaws.com/${key}`;
     } catch (error) {
       this.logger.error('Error uploading proctoring capture to S3', error);
       throw new InternalServerErrorException('Failed to upload proctoring capture to S3');
+    }
+  }
+
+  async getPresignedUrl(
+    keyOrUrl: string,
+    expiresInSeconds: number = 3600,
+    allowedPrefixes: string[] = ['proctoring/', 'submissions/', 'avatars/'],
+  ): Promise<string> {
+    if (!this.bucketName || !keyOrUrl || typeof keyOrUrl !== 'string') {
+      return keyOrUrl;
+    }
+
+    try {
+      let key = keyOrUrl;
+      if (keyOrUrl.startsWith('http://') || keyOrUrl.startsWith('https://')) {
+        const parsed = new URL(keyOrUrl);
+        key = decodeURIComponent(parsed.pathname.replace(/^\/+/, ''));
+      }
+
+      // Ensure key starts with one of the allowed prefixes and has no path traversal
+      const isAllowed = allowedPrefixes.some((prefix) => key.startsWith(prefix));
+      if (!isAllowed || key.includes('..')) {
+        this.logger.warn(`Rejected presigned URL generation for invalid key: ${key}`);
+        return keyOrUrl;
+      }
+
+      return await generateS3PresignedUrl({
+        bucket: this.bucketName,
+        region: process.env.AWS_REGION || 'us-east-1',
+        key,
+        s3Client: this.s3Client,
+        expiresInSeconds,
+      });
+    } catch (error) {
+      this.logger.error(`Error generating presigned URL for key/url: ${keyOrUrl}`, error);
+      return keyOrUrl;
     }
   }
 

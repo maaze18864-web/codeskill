@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import * as crypto from 'crypto';
 import { Assessment } from '../database/entities/assessment.entity';
 import { ExamSession } from '../database/entities/exam-session.entity';
 import { ExamSecurityEvent } from '../database/entities/exam-security-event.entity';
@@ -25,6 +26,8 @@ export class ExamSecurityService {
     assessmentId: string,
     candidateId: string,
     clientBody: any,
+    headers?: Record<string, string | string[] | undefined>,
+    requestUrl?: string,
   ) {
     if (!assessmentId) throw new BadRequestException('Invalid assessment ID');
 
@@ -36,14 +39,78 @@ export class ExamSecurityService {
     const security = (assessment as any).securityPolicy;
     const isSecureMode = security && security.secureExamMode !== 'DISABLED';
 
-    const clientType = clientBody.isSEB ? 'SEB' : 'BROWSER';
-    const clientVersion = clientBody.clientVersion || 'UNKNOWN';
-    const configKey = clientBody.configKey;
+    // Verify SEB request authenticity via genuine SEB headers and user-agent
+    const sebReqHash =
+      (headers?.['x-safeexambrowser-requesthash'] as string) ||
+      (headers?.['x-safeexambrowser-confighash'] as string) ||
+      (headers?.['x-safeexambrowser-configkeyhash'] as string);
+    const userAgent = String(headers?.['user-agent'] || '');
+    const isSebUserAgent = /SEB|SafeExamBrowser/i.test(userAgent);
+    const hasSebHeader = Boolean(sebReqHash);
 
-    if (security?.requireSEB && clientType !== 'SEB') {
-      throw new ForbiddenException(
-        'This assessment requires Safe Exam Browser. Please launch via SEB.',
-      );
+    const clientType = (hasSebHeader || isSebUserAgent) ? 'SEB' : 'BROWSER';
+    const clientVersion = clientBody?.clientVersion || 'UNKNOWN';
+
+    if (security?.requireSEB) {
+      if (clientType !== 'SEB') {
+        throw new ForbiddenException(
+          'This assessment requires Safe Exam Browser. Please launch via SEB.',
+        );
+      }
+
+      // If assessment defines an approved configKey, verify it cryptographically via headers (ISSUE-SEC-001 & ISSUE-SEC-002)
+      if (security.configKey) {
+        const expectedConfigKey = String(security.configKey).trim();
+        if (!sebReqHash) {
+          throw new ForbiddenException(
+            'Safe Exam Browser configuration key mismatch. Please download the official exam configuration.',
+          );
+        }
+
+        const candidateUrls = [
+          requestUrl,
+          headers?.['x-seb-request-url'] as string,
+          headers?.referer as string,
+          `/exam-security/${assessment.id}/secure-session/init`,
+        ].filter(Boolean) as string[];
+
+        const validCandidateHashes: string[] = [
+          crypto.createHash('sha256').update(assessment.id + expectedConfigKey).digest('hex'),
+          crypto.createHmac('sha256', expectedConfigKey).update(assessment.id).digest('hex'),
+        ];
+
+        for (const url of candidateUrls) {
+          validCandidateHashes.push(
+            crypto.createHash('sha256').update(url + expectedConfigKey).digest('hex'),
+            crypto.createHmac('sha256', expectedConfigKey).update(url).digest('hex'),
+          );
+          try {
+            const parsed = new URL(url, 'http://localhost');
+            validCandidateHashes.push(
+              crypto.createHash('sha256').update(parsed.pathname + expectedConfigKey).digest('hex'),
+            );
+          } catch {
+            // ignore url parse error
+          }
+        }
+
+        const cleanSentHash = String(sebReqHash).trim().toLowerCase();
+        const hasValidHash = validCandidateHashes.some((expected) => {
+          try {
+            const bufA = Buffer.from(cleanSentHash, 'utf8');
+            const bufB = Buffer.from(expected.toLowerCase(), 'utf8');
+            return bufA.length === bufB.length && crypto.timingSafeEqual(bufA, bufB);
+          } catch {
+            return false;
+          }
+        });
+
+        if (!hasValidHash) {
+          throw new ForbiddenException(
+            'Safe Exam Browser configuration key mismatch. Please download the official exam configuration.',
+          );
+        }
+      }
     }
 
     if (security?.requireSEB && security.allowedSEBVersions?.length > 0) {
@@ -76,7 +143,7 @@ export class ExamSecurityService {
         secureMode: security?.secureExamMode || 'DISABLED',
         clientType,
         clientVersion,
-        configKey,
+        configKey: security?.configKey || clientBody?.configKey || null,
         expiresAt,
         startedAt: new Date(),
         lastHeartbeatAt: new Date(),
@@ -91,13 +158,19 @@ export class ExamSecurityService {
       await this.sessionRepo.save(session);
     }
 
+    const sessionSecret = process.env.JWT_SECRET || 'codeskill-secure-exam-token-secret';
+    const token = crypto
+      .createHmac('sha256', sessionSecret)
+      .update(`${session.id}:${candidateId}:${session.expiresAt.getTime()}:${clientType}`)
+      .digest('hex');
+
     return {
       success: true,
       sessionId: session.id,
       expiresAt: session.expiresAt,
       status: session.status,
       secureMode: session.secureMode,
-      token: 'simulate-secure-token',
+      token,
     };
   }
 

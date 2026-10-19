@@ -5,6 +5,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { EmailJob } from '../database/entities/email-job.entity';
 import { EmailService } from '../emails/email.service';
+import { decryptTemporaryPassword } from './utils/credential-crypto.util';
 
 @Processor('credential-email')
 export class CredentialEmailProcessor extends WorkerHost {
@@ -37,11 +38,13 @@ export class CredentialEmailProcessor extends WorkerHost {
         throw new Error('Temporary password is empty or already purged');
       }
 
+      const rawPassword = decryptTemporaryPassword(emailJob.temporaryPassword);
+
       await this.emailService.sendCredentialEmail(
         emailJob.email,
         emailJob.name,
         emailJob.uid,
-        emailJob.temporaryPassword,
+        rawPassword,
         portalUrl || 'http://localhost:3000/student-login',
       );
 

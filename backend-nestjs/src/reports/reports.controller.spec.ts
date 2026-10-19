@@ -29,7 +29,7 @@ describe('ReportsController candidate confidentiality (AUD-003)', () => {
   let controller: ReportsController;
   const mockAttemptRepo = { findOne: jest.fn() };
   const mockAssessmentRepo = { findOne: jest.fn() };
-  const mockQuestionRepo = { findOne: jest.fn() };
+  const mockQuestionRepo = { findOne: jest.fn(), find: jest.fn().mockResolvedValue([]) };
 
   const ownerStudent = { id: 'student-owner-uuid', email: 'owner@test.com', role: 'student', isAdmin: false };
   const otherStudent = { id: 'other-student-uuid', email: 'other@test.com', role: 'student', isAdmin: false };
@@ -95,5 +95,25 @@ describe('ReportsController candidate confidentiality (AUD-003)', () => {
     await expect(
       controller.getStudentResultReport('non-existent', ownerStudent, res as never),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it('batches question lookups in a single query instead of N+1 individual queries (ISSUE-DAT-003)', async () => {
+    const attemptWithQuestions = {
+      ...mockAttempt,
+      responses: [
+        { questionId: 'q-1', isCorrect: true, marksAwarded: 10 },
+        { questionId: 'q-2', isCorrect: false, marksAwarded: 0 },
+      ],
+    };
+    mockAttemptRepo.findOne.mockResolvedValue(attemptWithQuestions);
+    mockQuestionRepo.find.mockResolvedValue([
+      { id: 'q-1', title: 'Question 1', difficulty: 'Easy' },
+      { id: 'q-2', title: 'Question 2', difficulty: 'Hard' },
+    ]);
+    const res = { set: jest.fn(), status: jest.fn().mockReturnThis(), send: jest.fn(), end: jest.fn() };
+    await controller.getStudentResultReport(attemptId, ownerStudent, res as never);
+
+    expect(mockQuestionRepo.find).toHaveBeenCalledTimes(1);
+    expect(mockQuestionRepo.findOne).not.toHaveBeenCalled();
   });
 });

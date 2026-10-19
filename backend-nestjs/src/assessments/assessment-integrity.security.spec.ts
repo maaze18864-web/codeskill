@@ -19,6 +19,7 @@ describe('Assessment Integrity & Server-Side Scoring (AUD-002, NEW-001, NEW-002,
     findOne: jest.fn(),
     find: jest.fn(),
     save: jest.fn(),
+    update: jest.fn().mockResolvedValue({ affected: 1 }),
   };
   const mockQuestionRepo = {
     find: jest.fn(),
@@ -547,6 +548,53 @@ describe('Assessment Integrity & Server-Side Scoring (AUD-002, NEW-001, NEW-002,
         studentUser,
       ),
     ).rejects.toThrow(BadRequestException);
+  });
+
+  it('reverts attempt status from evaluating back to in_progress on code execution failure (ISSUE-DAT-001)', async () => {
+    const dto = codingAttempt();
+    mockExecutionService.runCode.mockRejectedValueOnce(
+      new PistonUnavailableError(),
+    );
+    await expect(
+      service.submitAttempt(assessmentId, dto as never, studentUser),
+    ).rejects.toBeInstanceOf(PistonUnavailableError);
+    // Verified that update was called to revert status to in_progress
+    expect(mockAttemptRepo.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'attempt-1', status: 'evaluating' }),
+      expect.objectContaining({ status: 'in_progress' }),
+    );
+  });
+
+  it('reclaims stale evaluating attempt when evaluation lease expires (>60s) (ISSUE-DAT-001)', async () => {
+    const staleDate = new Date(Date.now() - 75_000); // 75 seconds ago
+    mockAttemptRepo.findOne.mockResolvedValueOnce({
+      id: 'attempt-stale-1',
+      assessmentId,
+      studentId: studentUser.id,
+      status: 'evaluating',
+      startedAt: staleDate,
+      updatedAt: staleDate,
+    });
+    mockQuestionRepo.find.mockResolvedValueOnce([
+      {
+        id: 'q-mcq-1',
+        questionType: 'single_choice',
+        marks: 5,
+        correctAnswer: 0,
+      },
+    ]);
+    const response = await service.submitAttempt(
+      assessmentId,
+      {
+        responses: [{ questionId: 'q-mcq-1', selectedAnswer: 0 }],
+      } as never,
+      studentUser,
+    );
+    expect(response.success).toBe(true);
+    expect(mockAttemptRepo.update).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'attempt-stale-1', status: 'evaluating' }),
+      expect.objectContaining({ status: 'in_progress' }),
+    );
   });
 });
 

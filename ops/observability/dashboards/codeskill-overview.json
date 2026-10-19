@@ -214,7 +214,10 @@
               }
             ]
           },
-          "unit": "percent"
+          "unit": "percent",
+          "min": 0,
+          "max": 10,
+          "noValue": "0"
         },
         "overrides": []
       },
@@ -235,7 +238,7 @@
           "values": false
         },
         "showThresholdLabels": false,
-        "showThresholdMarkers": true
+        "showThresholdMarkers": false
       },
       "title": "5xx Error Percentage (Target < 2%)",
       "type": "gauge",
@@ -243,7 +246,7 @@
         {
           "datasource": "${DS_PROMETHEUS}",
           "editorMode": "code",
-          "expr": "(sum(rate(http_requests_total{status_code=~\"5..\"}[2m])) / clamp_min(sum(rate(http_requests_total[2m])), 1)) * 100",
+          "expr": "((sum(rate(http_requests_total{status_code=~\"5..\"}[2m])) or vector(0)) / clamp_min(sum(rate(http_requests_total[2m])), 1)) * 100",
           "legendFormat": "5xx Ratio",
           "range": true,
           "refId": "A"
@@ -269,7 +272,8 @@
           "color": {
             "mode": "palette-classic"
           },
-          "unit": "short"
+          "unit": "short",
+          "noValue": "0"
         },
         "overrides": []
       },
@@ -286,7 +290,7 @@
         {
           "datasource": "${DS_PROMETHEUS}",
           "editorMode": "code",
-          "expr": "bullmq_queue_waiting_jobs{queue=\"submissions\"}",
+          "expr": "bullmq_queue_waiting_jobs{queue=\"submissions\"} or vector(0)",
           "legendFormat": "Waiting Submissions",
           "range": true,
           "refId": "A"
@@ -294,7 +298,7 @@
         {
           "datasource": "${DS_PROMETHEUS}",
           "editorMode": "code",
-          "expr": "bullmq_queue_active_jobs{queue=\"submissions\"}",
+          "expr": "bullmq_queue_active_jobs{queue=\"submissions\"} or vector(0)",
           "legendFormat": "Active Executions",
           "range": true,
           "refId": "B"
@@ -308,7 +312,8 @@
           "color": {
             "mode": "palette-classic"
           },
-          "unit": "ops"
+          "unit": "ops",
+          "noValue": "0"
         },
         "overrides": []
       },
@@ -325,7 +330,7 @@
         {
           "datasource": "${DS_PROMETHEUS}",
           "editorMode": "code",
-          "expr": "sum by (verdict) (rate(codeskill_judge_verdict_total[5m]))",
+          "expr": "sum by (verdict) (rate(codeskill_judge_verdict_total[5m])) or vector(0)",
           "legendFormat": "{{verdict}}",
           "range": true,
           "refId": "A"
@@ -339,7 +344,8 @@
           "color": {
             "mode": "palette-classic"
           },
-          "unit": "s"
+          "unit": "s",
+          "noValue": "0"
         },
         "overrides": []
       },
@@ -356,7 +362,7 @@
         {
           "datasource": "${DS_PROMETHEUS}",
           "editorMode": "code",
-          "expr": "histogram_quantile(0.90, sum(rate(codeskill_sandbox_http_duration_seconds_bucket[5m])) by (le, engine))",
+          "expr": "histogram_quantile(0.90, sum(rate(codeskill_sandbox_http_duration_seconds_bucket[5m])) by (le, engine)) or vector(0)",
           "legendFormat": "{{engine}} P90 Latency",
           "range": true,
           "refId": "A"

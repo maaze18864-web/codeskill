@@ -10,7 +10,9 @@ export function useFullscreen({ enabled, onViolation }: UseFullscreenOptions) {
   const [hasRequested, setHasRequested] = useState(false);
   const previous = useRef(false);
   const callback = useRef(onViolation);
-  callback.current = onViolation;
+  useEffect(() => {
+    callback.current = onViolation;
+  }, [onViolation]);
   const requestFullscreen = useCallback(async () => {
     await enterDocumentFullscreen();
     previous.current = true;

@@ -241,7 +241,7 @@ resource "aws_security_group" "rds" {
 }
 
 # -----------------------------------------------------------------------------
-# 5. Application Load Balancer
+# 5. Application Load Balancer & WAF
 # -----------------------------------------------------------------------------
 module "alb" {
   source                     = "../../modules/alb"
@@ -253,6 +253,13 @@ module "alb" {
   frontend_health_check_path = "/health/ready"
   backend_health_check_path  = "/api/health/ready"
   target_group_name          = "${local.name_prefix}-tg"
+  backend_stickiness_enabled = false
+}
+
+module "waf" {
+  source      = "../../modules/waf"
+  name_prefix = local.name_prefix
+  alb_arn     = module.alb.alb_arn
 }
 
 # -----------------------------------------------------------------------------
@@ -269,6 +276,7 @@ module "iam" {
   enable_s3             = true
   s3_bucket_arn         = module.s3.bucket_arn
   pm2_io_parameter_name = var.pm2_io_parameter_name
+  db_secret_arn         = module.rds.secret_arn
 }
 
 # -----------------------------------------------------------------------------
@@ -283,22 +291,24 @@ module "rds" {
   db_name                 = var.db_name
   db_username             = var.db_username
   db_password             = var.db_password
-  instance_class          = "db.t3.micro"
-  allocated_storage       = 20
-  max_allocated_storage   = 200
-  multi_az                = false
-  backup_retention_period = 0
-  storage_encrypted       = false
+  instance_class          = "db.t3.medium"
+  allocated_storage       = 50
+  max_allocated_storage   = 500
+  multi_az                = true
+  backup_retention_period = 30
+  storage_encrypted       = true
   deletion_protection     = true
 }
 
 module "redis" {
-  source                        = "../../modules/redis"
-  name_prefix                   = local.name_prefix
-  vpc_id                        = module.vpc.vpc_id
-  private_db_subnet_ids         = module.vpc.private_db_subnet_ids
+  source                     = "../../modules/redis"
+  name_prefix                = local.name_prefix
+  vpc_id                     = module.vpc.vpc_id
+  private_db_subnet_ids      = module.vpc.private_db_subnet_ids
   authorized_security_group_ids = [aws_security_group.backend.id]
-  node_type                     = "cache.t4g.micro"
+  node_type                  = "cache.t4g.small"
+  transit_encryption_enabled = true
+  at_rest_encryption_enabled = true
 }
 
 # -----------------------------------------------------------------------------
@@ -318,15 +328,15 @@ module "frontend_asg" {
 
   iam_instance_profile_name = module.iam.frontend_instance_profile_name
 
-  min_size         = 1
-  desired_capacity = 1
+  min_size         = 2
+  desired_capacity = 2
   max_size         = 6
 
   cpu_target_utilization = 65.0
 
   health_check_type         = "ELB"
   health_check_grace_period = 180
-  min_healthy_percentage    = 50
+  min_healthy_percentage    = 100
   instance_warmup           = var.asg_instance_warmup
 
   user_data = templatefile("${path.module}/userdata/frontend.sh.tftpl", {
@@ -335,6 +345,7 @@ module "frontend_asg" {
     pm2_io_parameter_name = var.pm2_io_parameter_name
     frontend_image        = "${module.ecr.frontend_repository_url}:${var.frontend_image_tag}"
     domain_name           = local.domain_name
+    internal_backend_url  = module.service_discovery.backend_base_url
   })
 
   scheduled_exam_scale_up_cron   = var.exam_scale_up_cron
@@ -354,15 +365,15 @@ module "backend_asg" {
 
   iam_instance_profile_name = module.iam.backend_instance_profile_name
 
-  min_size         = 1
-  desired_capacity = 1
+  min_size         = 2
+  desired_capacity = 2
   max_size         = 6
 
   cpu_target_utilization = 60.0
 
   health_check_type         = "ELB"
   health_check_grace_period = 180
-  min_healthy_percentage    = 50
+  min_healthy_percentage    = 100
   instance_warmup           = var.asg_instance_warmup
 
   user_data = templatefile("${path.module}/userdata/backend.sh.tftpl", {
@@ -377,8 +388,9 @@ module "backend_asg" {
     db_name                    = var.db_name
     redis_host                 = module.redis.endpoint
     redis_cluster_mode         = "true"
-    redis_tls                  = "false"
+    redis_tls                  = "true"
     backend_env_parameter_name = var.backend_env_parameter_name
+    backend_service_id         = module.service_discovery.backend_service_id
     piston_base_url            = module.service_discovery.piston_base_url
     judge0_base_url            = module.service_discovery.judge0_base_url
     s3_bucket_name             = module.s3.bucket_name

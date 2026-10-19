@@ -17,50 +17,7 @@ export class HealthAndTelemetryController {
     private readonly logger: PinoLogger,
   ) {}
 
-  // 1. Shallow Liveness Probe
-  @Get('health/live')
-  @ApiOperation({ summary: 'Shallow Liveness Probe' })
-  getLiveness() {
-    return {
-      status: 'ok',
-      uptimeSeconds: Math.floor(process.uptime()),
-      timestamp: new Date().toISOString(),
-    };
-  }
-
-  // 2. ALB Readiness Probe (Cached for 5s to prevent DB connection stampede)
-  @Get('health/ready')
-  @ApiOperation({ summary: 'ALB Readiness Probe (5s cached)' })
-  async getReadiness(@Res() res: Response): Promise<void> {
-    const now = Date.now();
-    if (this.cachedReadyState && this.cachedReadyState.expiresAt > now) {
-      res.status(this.cachedReadyState.status).json(this.cachedReadyState.payload);
-      return;
-    }
-
-    const checks: Record<string, string> = {};
-    let isHealthy = true;
-
-    try {
-      await this.withTimeout(this.primaryDataSource.query('SELECT 1'), 1000);
-      checks.postgresPrimary = 'up';
-    } catch {
-      checks.postgresPrimary = 'down';
-      isHealthy = false;
-    }
-
-    const status = isHealthy ? HttpStatus.OK : HttpStatus.SERVICE_UNAVAILABLE;
-    const payload = {
-      status: isHealthy ? 'ready' : 'degraded',
-      checks,
-      timestamp: new Date().toISOString(),
-    };
-
-    this.cachedReadyState = { status, payload, expiresAt: now + 5000 };
-    res.status(status).json(payload);
-  }
-
-  // 3. Deep Synthetic Probe for Uptime Kuma (:3002) - Never wired to ALB termination
+  // 1. Deep Synthetic Probe for Uptime Kuma (:3002) - Never wired to ALB termination
   @Get('health/deep')
   @ApiOperation({ summary: 'Deep Synthetic Health Probe' })
   async getDeepHealth(@Res() res: Response): Promise<void> {
@@ -102,8 +59,8 @@ export class HealthAndTelemetryController {
     });
   }
 
-  // 4. Client Error & Web Vitals Ingestion Endpoint (Ships straight to Axiom via Pino)
-  @Post('api/telemetry/client-events')
+  // 2. Client Error & Web Vitals Ingestion Endpoint (Global prefix 'api' yields /api/telemetry/client-events)
+  @Post('telemetry/client-events')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Client error & Web Vitals ingestion endpoint' })
   ingestClientTelemetry(@Body() body: Record<string, any>): void {

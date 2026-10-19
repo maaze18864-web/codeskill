@@ -23,9 +23,9 @@ variable "create_parameter_group" {
 }
 
 variable "instance_class" {
-  description = "RDS instance class (db.t4g.micro has 2 vCPU, 1 GiB RAM)"
+  description = "RDS instance class (db.t3.medium has 2 vCPU, 4 GiB RAM)"
   type        = string
-  default     = "db.t4g.micro"
+  default     = "db.t3.medium"
 }
 
 variable "allocated_storage" {

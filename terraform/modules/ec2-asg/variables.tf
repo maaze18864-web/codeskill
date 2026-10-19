@@ -19,6 +19,12 @@ variable "instance_type" {
   default     = "t3a.small"
 }
 
+variable "http_put_response_hop_limit" {
+  description = "Desired HTTP PUT response hop limit for IMDSv2 (1 restricts metadata token retrieval to host only, blocking container hop)"
+  type        = number
+  default     = 1
+}
+
 variable "security_group_ids" {
   description = "List of security group IDs"
   type        = list(string)

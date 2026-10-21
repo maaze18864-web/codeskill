@@ -99,16 +99,15 @@ function statement(container: HTMLElement) {
   return within(container.querySelector("#statement")!).getByRole("textbox");
 }
 
-it("imports legacy statements without adding examples to the judge's cases", () => {
+it("imports legacy statements without promoting an explicitly hidden example", () => {
   const draft = practiceDraft({
     questionType: "algorithmic", question: "Read two numbers and print their sum.",
     testCases: [{ input: "secret input", expectedOutput: "secret output", isHidden: true }],
-    examples: [{ input: "example input", output: "example output" }, { input: "private example", isHidden: true }],
+    examples: [{ input: "secret input", output: "secret output" }],
   }, true);
   expect(draft.statement?.description).toBe("Read two numbers and print their sum.");
   expect(draft.testCases).toHaveLength(1);
   expect(draft.testCases?.[0].isHidden).toBe(true);
-  expect(draft.sampleExamples).toEqual([{ id: "example-0", input: "example input", output: "example output", explanation: "" }]);
 });
 
 it("creates a practice problem using the bank sections without changing a bank draft", async () => {
@@ -130,7 +129,6 @@ it("creates a practice problem using the bank sections without changing a bank d
     "Problem Statement",
     "Constraints",
     "Input & Output Format",
-    "Example Test Cases",
     "Starter Code",
     "Reference Solution",
     "Test Cases",
@@ -182,8 +180,6 @@ it("imports, edits, and publishes an independent copy with private tests and ref
   fireEvent.change(screen.getByLabelText("Test case 2 expected output"), {
     target: { value: "200" },
   });
-  fireEvent.change(screen.getByLabelText("Example 1 input"), { target: { value: "7 8" } });
-  fireEvent.change(screen.getByLabelText("Example 1 output"), { target: { value: "15" } });
   fireEvent.change(screen.getByLabelText("Default Language"), {
     target: { value: "python3" },
   });
@@ -207,7 +203,7 @@ it("imports, edits, and publishes an independent copy with private tests and ref
         starterCode: { cpp: "// begin" },
         referenceSolution: { cpp: "// private solution" },
         sampleExamples: [
-          { input: "7 8", output: "15", explanation: "Add both numbers" },
+          { input: "1 2", output: "3", explanation: "Add both numbers" },
         ],
         testCases: {
           cases: [
@@ -224,23 +220,6 @@ it("imports, edits, and publishes an independent copy with private tests and ref
   );
   expect(adminQuestionsAPI.update).not.toHaveBeenCalled();
   expect(bankQuestion.testCases[1].expectedOutput).toBe("199");
-  expect(bankQuestion.examples[0].input).toBe("1 2");
-});
-
-it("loads and removes saved examples without changing the judge cases", async () => {
-  jest.mocked(adminProblemsAPI.getById).mockResolvedValue({ data: {
-    id: "practice-1", title: "Existing", slug: "existing", visibility: "Published",
-    statement: { description: "Existing statement", samples: [{ input: "5", output: "10", explanation: "Double five" }] },
-    testCases: { cases: [{ input: "8", output: "16", isHidden: true, weight: 1 }] },
-  } } as never);
-  render(<PracticeProblemEditor problemId="practice-1" />);
-  expect(await screen.findByLabelText("Example 1 input")).toHaveValue("5");
-  expect(screen.getByLabelText("Test case 1 input")).toHaveValue("8");
-  fireEvent.click(screen.getByRole("button", { name: "Remove example 1" }));
-  fireEvent.click(screen.getByRole("button", { name: "Publish Problem" }));
-  await waitFor(() => expect(adminProblemsAPI.update).toHaveBeenCalledWith("practice-1", expect.objectContaining({
-    sampleExamples: [], testCases: { cases: [expect.objectContaining({ input: "8", output: "16", isHidden: true })] },
-  })));
 });
 
 it("loads an existing practice problem and saves default language changes without dropping reference code", async () => {

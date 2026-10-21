@@ -126,17 +126,51 @@ export class SmartThrottlerGuard extends ThrottlerGuard {
     return `ip:${clientIp}`;
   }
 
+  private isPrivateIp(ip: string): boolean {
+    if (!ip) return false;
+    const clean = ip.replace(/^::ffff:/, '').trim();
+    if (clean === '127.0.0.1' || clean === '::1' || clean === 'localhost') return true;
+    if (clean.startsWith('10.') || clean.startsWith('192.168.')) return true;
+    if (/^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(clean)) return true;
+    return false;
+  }
+
   private resolveClientIp(req: Record<string, any>): string {
+    // 1. If Express trust proxy has resolved a trusted client IP that is public, use it
+    if (
+      typeof req.ip === 'string' &&
+      req.ip.length > 0 &&
+      req.ip !== 'unknown' &&
+      !this.isPrivateIp(req.ip)
+    ) {
+      return req.ip;
+    }
+
+    // 2. Parse X-Forwarded-For securely: only trust hops appended by managed reverse proxy (ISSUE-SEC-003)
     const forwarded = req.headers?.['x-forwarded-for'];
     if (typeof forwarded === 'string' && forwarded.length > 0) {
-      const first = forwarded.split(',')[0].trim();
-      if (first) return first;
+      const parts = forwarded
+        .split(',')
+        .map((p: string) => p.trim())
+        .filter(Boolean);
+      // Scan right-to-left from the trusted proxy to find the true client IP
+      for (let i = parts.length - 1; i >= 0; i--) {
+        if (!this.isPrivateIp(parts[i])) {
+          return parts[i];
+        }
+      }
+      if (parts.length > 0) return parts[0];
     }
 
     if (Array.isArray(req.ips) && req.ips.length > 0) {
+      for (let i = req.ips.length - 1; i >= 0; i--) {
+        if (!this.isPrivateIp(req.ips[i])) {
+          return req.ips[i];
+        }
+      }
       return req.ips[0];
     }
 
-    return req.ip || req.connection?.remoteAddress || 'unknown';
+    return req.ip || req.connection?.remoteAddress || req.socket?.remoteAddress || 'unknown';
   }
 }

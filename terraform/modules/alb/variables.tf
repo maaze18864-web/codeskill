@@ -73,8 +73,21 @@ variable "target_group_name" {
   default     = ""
 }
 
+variable "backend_stickiness_enabled" {
+  description = "Enable stickiness on backend target group"
+  type        = bool
+  default     = false
+}
+
 variable "tags" {
   description = "Resource tags"
   type        = map(string)
   default     = {}
+}
+
+variable "origin_verify_secret" {
+  description = "Secret token expected in X-Origin-Verify header from CloudFront. If empty, all traffic is allowed without header check."
+  type        = string
+  default     = ""
+  sensitive   = true
 }

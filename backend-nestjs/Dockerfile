@@ -51,4 +51,6 @@ EXPOSE 5001
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
   CMD curl -f http://localhost:5001/api/health/live || exit 1
 
-CMD ["node", "dist/main.js"]
+# Apply the idempotent assessment schema additions on every new image rollout.
+# Do not start an API with a schema it cannot query if migration fails.
+CMD ["sh", "-c", "node dist/database/run-assessment-schema-migrations.js && exec node dist/main.js"]

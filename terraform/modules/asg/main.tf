@@ -56,6 +56,8 @@ chown -R ec2-user:ec2-user $APP_DIR
 cat << 'NGINX' > /etc/nginx/conf.d/codeskill.conf
 server {
     listen 80;
+    # Allow the 15 MiB question file plus multipart overhead; API caps still apply.
+    client_max_body_size 20M;
     
     # Next.js frontend
     location / {

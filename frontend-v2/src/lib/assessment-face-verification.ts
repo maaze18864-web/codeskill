@@ -124,8 +124,26 @@ export function getAssessmentFaceReference(assessmentId: string) {
   return references.get(assessmentId) || null;
 }
 
+export async function disposeFaceLandmarker(): Promise<void> {
+  if (faceLandmarkerPromise) {
+    try {
+      const landmarker = await faceLandmarkerPromise;
+      if (typeof landmarker?.close === "function") {
+        landmarker.close();
+      }
+    } catch {
+      // Ignore cleanup error
+    } finally {
+      faceLandmarkerPromise = null;
+    }
+  }
+}
+
 export function clearAssessmentFaceReference(assessmentId: string) {
   references.delete(assessmentId);
+  if (references.size === 0) {
+    void disposeFaceLandmarker();
+  }
 }
 
 /** Detects face count and compares the live face embedding with the pre-exam selfie. */

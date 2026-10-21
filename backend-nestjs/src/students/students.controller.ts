@@ -170,6 +170,7 @@ export class StudentsController {
     @Body('defaultSemester') defaultSemester?: string,
     @Body('defaultYear') defaultYear?: string,
     @Body('defaultUniversity') defaultUniversity?: string,
+    @Body('sheetName') sheetName?: string,
   ) {
     if (!file) {
       throw new BadRequestException('Spreadsheet file is required');
@@ -181,8 +182,9 @@ export class StudentsController {
       defaultSemester: defaultSemester ? Number(defaultSemester) : undefined,
       defaultYear: defaultYear ? Number(defaultYear) : undefined,
       defaultUniversity: defaultUniversity?.trim(),
+      sheetName: sheetName?.trim(),
     };
-    return this.studentsService.parseAndValidateImport(file.buffer, defaultOptions);
+    return this.studentsService.parseAndValidateImport(file.buffer, defaultOptions, true);
   }
 
   @Post('import/confirm')

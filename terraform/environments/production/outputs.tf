@@ -45,3 +45,4 @@ output "redis_endpoint" {
   description = "Configuration endpoint of the ElastiCache Redis cluster"
   value       = module.redis.endpoint
 }
+

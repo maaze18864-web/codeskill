@@ -59,6 +59,8 @@ it("requests the public endpoint without authentication or default topic and pas
     expect(response.data.data[0]._id).toBe("one");
     await problemsAPI.getAll(2, 20, "  two & sum ", " Arrays ");
     expect(request?.params).toEqual({ page: 2, limit: 20, search: "two & sum", category: "Arrays" });
+    await problemsAPI.getAll(1, 5, "", "All Topics", controller.signal, "Hard");
+    expect(request?.params).toEqual({ page: 1, limit: 5, difficulty: "Hard" });
   } finally {
     api.defaults.adapter = originalAdapter;
   }

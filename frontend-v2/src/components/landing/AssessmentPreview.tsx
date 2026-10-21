@@ -14,6 +14,7 @@ import {
   Layers,
 } from "lucide-react";
 import { motion } from "framer-motion";
+import { AssignedAssessments } from "./AssignedAssessments";
 
 const ASSESSMENT_STEPS = [
   {
@@ -128,6 +129,7 @@ export function AssessmentPreview() {
           </div>
         </div>
 
+        <AssignedAssessments />
       </div>
     </section>
   );

@@ -1,4 +1,4 @@
-jest.mock('@nestjs/typeorm', () => ({ InjectRepository: () => () => {}, InjectDataSource: () => () => {} }));
+jest.mock('@nestjs/typeorm', () => ({ InjectRepository: () => () => { }, InjectDataSource: () => () => { } }));
 import {
   BadRequestException,
   ConflictException,
@@ -13,8 +13,8 @@ const payload = {
   description: 'Updated details',
   startTime: '2026-11-01T04:30:00Z',
   endTime: '2026-11-01T06:30:00Z',
-  problems: ['q1', 'q2'],
-  format: 'coding',
+  problems: ['p1', 'p2'],
+  contestFormat: 'coding',
   isPrivate: true,
   password: 'access-code',
   isPublished: true,
@@ -32,9 +32,9 @@ describe('Admin contest editing', () => {
     where: { id?: string; mongoId?: string }[] | { slug: string };
   };
   let stored: ContestRecord;
-  let bankQuestions: Array<Record<string, any>>;
-  let questionRepo: { find: jest.Mock };
-  const legacyProblemRepo = { findOne: jest.fn().mockResolvedValue({ id: 'legacy-id', visibility: 'Published' }) };
+  let questionRows: Array<Record<string, any>>;
+  let questionQueryBuilder: Record<string, jest.Mock>;
+  let questionRepository: Record<string, jest.Mock>;
   const makeRepository = () => ({
     findOne: jest.fn(({ where }: Lookup) =>
       Promise.resolve(Array.isArray(where) ? { ...stored } : null),
@@ -44,7 +44,7 @@ describe('Admin contest editing', () => {
       return Promise.resolve(contest);
     }),
     create: jest.fn(
-      (data: { title: string; slug: string; [key: string]: unknown }) => ({
+      (data: { title: string; slug: string;[key: string]: unknown }) => ({
         id,
         ...data,
       }),
@@ -54,6 +54,23 @@ describe('Admin contest editing', () => {
   let repo: ReturnType<typeof makeRepository>;
 
   beforeEach(() => {
+    questionRows = [
+      { id: 'p1', question: 'Coding one', title: 'Coding one', questionType: 'DSA', status: 'active', metadata: { visibility: 'Published', contestOnly: true } },
+      { id: 'p2', question: 'Coding two', title: 'Coding two', questionType: 'coding', status: 'approved', metadata: { visibility: 'Public', contestOnly: true } },
+      { id: 'p3', question: 'MCQ one', title: 'MCQ one', questionType: 'single_choice', status: 'published', metadata: { visibility: 'Published', contestOnly: true } },
+    ];
+    questionQueryBuilder = {
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      skip: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
+      getManyAndCount: jest.fn().mockResolvedValue([questionRows, questionRows.length]),
+    };
+    questionRepository = {
+      findBy: jest.fn().mockImplementation(() => Promise.resolve(questionRows)),
+      createQueryBuilder: jest.fn().mockReturnValue(questionQueryBuilder),
+    };
     stored = {
       id,
       title: 'Original',
@@ -61,26 +78,10 @@ describe('Admin contest editing', () => {
       participants: ['candidate'],
       antiCheatConfig: { warningLimit: 3 },
     };
-    bankQuestions = [
-      { id: 'q1', question: 'First coding question', title: 'First coding question', slug: 'first-coding-question', questionType: 'DSA', status: 'active', difficulty: 'easy', metadata: { visibility: 'Published', contestOnly: true } },
-      { id: 'q2', question: 'Second coding question', title: 'Second coding question', slug: 'second-coding-question', questionType: 'coding', status: 'approved', difficulty: 'medium', metadata: { visibility: 'Public', contestOnly: true } },
-      { id: 'q3', question: 'Choice question', title: 'Choice question', questionType: 'MCQ', status: 'active', difficulty: 'easy', metadata: { visibility: 'Published', contestOnly: true } },
-      { id: 'q4', question: 'Practice only', questionType: 'DSA', status: 'active', metadata: { visibility: 'Published', contestOnly: false } },
-      { id: 'q5', question: 'Draft coding', questionType: 'DSA', status: 'draft', metadata: { visibility: 'Draft', contestOnly: true } },
-    ];
-    questionRepo = {
-      find: jest.fn(({ where }: { where?: { id?: { value?: string[] } } } = {}) =>
-        Promise.resolve(
-          where?.id?.value
-            ? bankQuestions.filter((question) => where.id!.value!.includes(question.id))
-            : bankQuestions,
-        ),
-      ),
-    };
     repo = makeRepository();
     service = new AdminService(
       {} as never,
-      legacyProblemRepo as never,
+      {} as never,
       {} as never,
       {} as never,
       {} as never,
@@ -89,9 +90,32 @@ describe('Admin contest editing', () => {
       {} as never,
       {} as never,
       {} as never,
-      questionRepo as never,
+      questionRepository as never,
+      {} as never,
       {} as never,
     );
+  });
+
+  it('lists only contest-eligible supported Question Bank types for contest selection', async () => {
+    const result = await service.getProblems(2, 10, 'array', true);
+    expect(questionRepository.createQueryBuilder).toHaveBeenCalledWith('q');
+    expect(questionQueryBuilder.where).toHaveBeenCalledWith(
+      'lower(q.status) IN (:...statuses)',
+      { statuses: ['approved', 'active', 'published'] },
+    );
+    expect(questionQueryBuilder.andWhere).toHaveBeenCalledWith(
+      "lower(btrim(q.metadata->>'visibility')) IN (:...visibility)",
+      { visibility: ['published', 'public'] },
+    );
+    expect(questionQueryBuilder.andWhere).toHaveBeenCalledWith(
+      "q.metadata->'contestOnly' = 'true'::jsonb",
+    );
+    expect(questionQueryBuilder.andWhere).toHaveBeenCalledWith(
+      'lower(q.questionType) IN (:...questionTypes)',
+      { questionTypes: expect.arrayContaining(['single_choice', 'dsa']) },
+    );
+    expect(questionQueryBuilder.skip).toHaveBeenCalledWith(10);
+    expect(result.problems.map((problem) => problem.questionType)).toEqual(['DSA', 'coding', 'single_choice']);
   });
 
   it('persists the selected contest and reloads fields while retaining participants and security configuration', async () => {
@@ -106,7 +130,8 @@ describe('Admin contest editing', () => {
         id,
         title: payload.title,
         slug: payload.slug,
-        problems: ['q1', 'q2'],
+        problems: ['p1', 'p2'],
+        contestFormat: 'coding',
         isPrivate: true,
         password: 'access-code',
         isPublished: true,
@@ -170,6 +195,7 @@ describe('Admin contest editing', () => {
     expect(repo.create).toHaveBeenCalledWith(
       expect.objectContaining({
         slug: payload.slug,
+        contestFormat: 'coding',
         antiCheatConfig: expect.objectContaining({
           maxTabSwitchViolations: 3,
           actionOnMaxViolations: 'auto_submit',
@@ -181,32 +207,39 @@ describe('Admin contest editing', () => {
     expect(repo.remove).toHaveBeenCalledWith(expect.objectContaining({ id }));
   });
 
-  it('lists only published Contest Only questions and applies the chosen format', async () => {
-    expect(await service.getContestEligibleQuestions('mcq')).toEqual({
-      questions: [{ _id: 'q3', title: 'Choice question', slug: 'question-q3', difficulty: 'easy', type: 'mcq' }],
-    });
-    expect(await service.getContestEligibleQuestions('coding')).toEqual({
-      questions: [
-        { _id: 'q1', title: 'First coding question', slug: 'first-coding-question', difficulty: 'easy', type: 'coding' },
-        { _id: 'q2', title: 'Second coding question', slug: 'second-coding-question', difficulty: 'medium', type: 'coding' },
-      ],
-    });
-    expect((await service.getContestEligibleQuestions('mixed')).questions).toHaveLength(3);
+  it('accepts eligible MCQ, coding, and mixed contests and persists their format', async () => {
+    for (const [contestFormat, problems] of [
+      ['mcq', ['p3']],
+      ['coding', ['p1']],
+      ['mixed', ['p1', 'p3']],
+    ] as const) {
+      await service.createContest({ ...payload, slug: `${contestFormat}-contest`, contestFormat, problems });
+      expect(repo.create).toHaveBeenLastCalledWith(expect.objectContaining({ contestFormat, problems }));
+    }
   });
 
-  it('rejects unpublished, non-contest-only, duplicate and format-incompatible selections', async () => {
-    await expect(service.createContest({ ...payload, problems: ['q4'] })).rejects.toThrow('published Contest Only');
-    await expect(service.createContest({ ...payload, problems: ['q5'] })).rejects.toThrow('published Contest Only');
-    await expect(service.createContest({ ...payload, format: 'mcq', problems: ['q1'] })).rejects.toThrow('matching the selected format');
-    await expect(service.createContest({ ...payload, problems: ['q1', 'q1'] })).rejects.toThrow('duplicate problems');
+  it.each([
+    ['draft', { status: 'draft', metadata: { visibility: 'Draft', contestOnly: true } }],
+    ['not contest-only', { metadata: { visibility: 'Published', contestOnly: false } }],
+    ['unpublished', { metadata: { visibility: 'Private', contestOnly: true } }],
+  ])('rejects a %s question when creating a contest', async (_label, updates) => {
+    questionRows[0] = { ...questionRows[0], ...updates };
+    await expect(service.createContest({ ...payload, problems: ['p1'] })).rejects.toBeInstanceOf(BadRequestException);
     expect(repo.save).not.toHaveBeenCalled();
   });
 
-  it('allows an unchanged published legacy coding problem when editing an existing contest', async () => {
-    stored.problems = ['legacy-id'];
-    await service.updateContest(id, { ...payload, problems: ['legacy-id'] });
-    expect(repo.save).toHaveBeenCalledWith(expect.objectContaining({ problems: ['legacy-id'], format: 'coding' }));
-    expect(legacyProblemRepo.findOne).toHaveBeenCalledWith({ where: { id: 'legacy-id' } });
+  it('rejects incompatible selections and invalid contest formats', async () => {
+    await expect(service.createContest({ ...payload, contestFormat: 'mcq', problems: ['p1'] })).rejects.toThrow('incompatible with its format');
+    await expect(service.createContest({ ...payload, contestFormat: 'other' })).rejects.toThrow('Invalid contest format');
+    expect(repo.save).not.toHaveBeenCalled();
+  });
+
+  it('rejects an edit after a selected question loses Contest Only eligibility', async () => {
+    questionRows[0].metadata = { visibility: 'Published', contestOnly: false };
+    await expect(service.updateContest(id, { ...payload, problems: ['p1'] })).rejects.toThrow(
+      'published Contest Only questions',
+    );
+    expect(repo.save).not.toHaveBeenCalled();
   });
 
   it('updates security settings and resultsPublished status when provided', async () => {

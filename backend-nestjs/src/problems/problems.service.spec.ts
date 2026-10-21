@@ -218,46 +218,6 @@ it('maps admin statement, starter code and visible tests without exposing execut
   expect(cache.get).not.toHaveBeenCalled();
 });
 
-it('keeps authored examples separate from public and hidden execution cases', async () => {
-  const { service, metadataQuery, metadata } = setup();
-  const problem = practice();
-  problem.statement.samples = [
-    { input: 'authored example', output: 'example answer', explanation: 'Explain this input' },
-    { input: 'private example', output: 'private answer', isHidden: true },
-  ] as never;
-  metadataQuery.getOne.mockResolvedValueOnce(problem);
-  metadata.findOne.mockResolvedValueOnce(problem);
-  const detail = await service.getProblemBySlug('two-sum');
-  expect(detail.data.statement.samples).toEqual([
-    { input: 'authored example', output: 'example answer', explanation: 'Explain this input' },
-  ]);
-  expect(detail.data.testCases.cases).toEqual([
-    expect.objectContaining({ input: '1 2', output: '3' }),
-  ]);
-  const execution = await service.getExecutionProblem(id);
-  expect(execution.testCases).toHaveLength(2);
-  expect(execution.testCases.map((test) => test.input)).toEqual(['1 2', 'hidden-input']);
-});
-
-it.each(['metadata', 'question', 'legacy'] as const)(
-  'does not manufacture examples from %s public judge cases',
-  async (source) => {
-    const { service, metadataQuery, bankQuery, legacyQuery } = setup();
-    if (source === 'metadata') {
-      const problem = practice();
-      problem.statement.samples = [];
-      metadataQuery.getOne.mockResolvedValueOnce(problem);
-    } else if (source === 'question') {
-      bankQuery.getOne.mockResolvedValueOnce(codingQuestion());
-    } else {
-      legacyQuery.getOne.mockResolvedValueOnce({ ...legacyProblem(), examples: [] });
-    }
-    const detail = await service.getProblemBySlug('example');
-    expect(detail.data.statement.samples).toEqual([]);
-    expect(detail.data.testCases.cases).toHaveLength(1);
-  },
-);
-
 it.each(['Draft', 'Private', 'Archived', 'pending'])(
   'blocks %s metadata even if a public legacy copy or cached detail exists',
   async (visibility) => {

@@ -122,4 +122,32 @@ describe('API Utils', () => {
       }
     });
   });
+
+  describe('recoverable service failures', () => {
+    it.each([
+      [{ message: 'Network Error', code: 'ERR_NETWORK' }, 'API request could not reach the service'],
+      [{ message: 'timeout', code: 'ECONNABORTED' }, 'API request could not reach the service'],
+      [{ response: { status: 500 }, message: 'Request failed with status code 500' }, 'API service error'],
+    ])('logs a safe diagnostic for the failure without swallowing it', async (failure, logMessage) => {
+      const { logger } = await import('@/lib/logger');
+      const errorHandler = api.interceptors.response.handlers[0].rejected;
+      const warnSpy = jest.spyOn(logger, 'warn').mockImplementation(() => {});
+      const errorSpy = jest.spyOn(logger, 'error').mockImplementation(() => {});
+
+      await expect(errorHandler({ config: { url: '/dashboard' }, ...failure })).rejects.toBeDefined();
+      expect(warnSpy.mock.calls.some(([message]) => message === logMessage) || errorSpy.mock.calls.some(([message]) => message === logMessage)).toBe(true);
+
+      warnSpy.mockRestore();
+      errorSpy.mockRestore();
+    });
+
+    it('does not clear session data or redirect for permission and validation errors', async () => {
+      localStorage.setItem('codeskill_token', 'still-valid');
+      const errorHandler = api.interceptors.response.handlers[0].rejected;
+      for (const status of [400, 403, 404, 409, 422, 429]) {
+        await expect(errorHandler({ response: { status }, config: { url: '/resource' } })).rejects.toBeDefined();
+      }
+      expect(localStorage.getItem('codeskill_token')).toBe('still-valid');
+    });
+  });
 });

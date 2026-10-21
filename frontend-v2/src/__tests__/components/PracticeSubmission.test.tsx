@@ -5,7 +5,6 @@ import {
   render,
   screen,
   waitFor,
-  within,
 } from "@testing-library/react";
 import Page from "@/app/problems/[id]/page";
 import { problemsAPI, runAPI, submissionAPI } from "@/config/api";
@@ -87,13 +86,13 @@ beforeEach(() => {
   } as any);
 });
 
-it("shows authored examples in the left panel independently of real test cases", async () => {
+it("shows sample test cases in a dedicated left-panel tab and loads one into the console", async () => {
   const response = await jest.mocked(problemsAPI.getBySlug)("feedback");
   response.data.data.statement = {
     description: "Read input and echo it.",
     samples: [
-      { input: "AUTHORED", output: "AUTHORED", explanation: "identity" },
-      { input: "OTHER-EXAMPLE", output: "OTHER-EXAMPLE" },
+      { input: "PUBLIC", output: "PUBLIC", explanation: "identity" },
+      { input: "OTHER", output: "OTHER" },
     ],
   };
   response.data.data.testCases = {
@@ -107,20 +106,19 @@ it("shows authored examples in the left panel independently of real test cases",
   render(<Page params={Promise.resolve({ id: "feedback" })} />);
 
   fireEvent.click(await screen.findByRole("button", { name: "Samples" }));
-  const panel = (await screen.findByRole("heading", { name: "Examples" })).parentElement!;
+  const panel = await screen.findByText("Sample Test Cases");
   expect(panel).toBeInTheDocument();
   expect(screen.getByText("Example 1")).toBeInTheDocument();
   expect(screen.getByText("Example 2")).toBeInTheDocument();
   expect(screen.getByText("identity")).toBeInTheDocument();
-  expect(within(panel).getAllByText("AUTHORED")).toHaveLength(2);
-  expect(within(panel).queryByText("PUBLIC")).not.toBeInTheDocument();
   // Hidden cases never reach the candidate panel.
   expect(screen.queryByText("SECRET")).not.toBeInTheDocument();
 
-  expect(within(panel).queryByRole("button", { name: /Load in Console/ })).not.toBeInTheDocument();
+  fireEvent.click(screen.getAllByRole("button", { name: /Load in Console/ })[1]);
+  expect(screen.getByText("Case 2")).toBeInTheDocument();
 });
 
-it("does not turn public test cases into examples when none are authored", async () => {
+it("falls back to public test cases when no samples are authored", async () => {
   const response = await jest.mocked(problemsAPI.getBySlug)("feedback");
   response.data.data.statement = { description: "Echo it.", samples: [] };
   response.data.data.testCases = {
@@ -133,9 +131,7 @@ it("does not turn public test cases into examples when none are authored", async
   render(<Page params={Promise.resolve({ id: "feedback" })} />);
 
   fireEvent.click(await screen.findByRole("button", { name: "Samples" }));
-  const panel = (await screen.findByRole("heading", { name: "Examples" })).parentElement!;
-  expect(within(panel).getByText(/No examples have been provided/)).toBeInTheDocument();
-  expect(within(panel).queryByText("VISIBLE")).not.toBeInTheDocument();
+  expect((await screen.findAllByText("VISIBLE")).length).toBeGreaterThan(0);
   expect(screen.queryByText("HIDDEN-CASE")).not.toBeInTheDocument();
 });
 

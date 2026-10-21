@@ -10,6 +10,24 @@ terraform {
 
 data "aws_caller_identity" "current" {}
 data "aws_partition" "current" {}
+data "aws_region" "current" {}
+
+locals {
+  partition  = data.aws_partition.current.partition
+  region     = data.aws_region.current.name
+  account_id = data.aws_caller_identity.current.account_id
+
+  secrets_resources = compact([
+    var.db_secret_arn != "" ? var.db_secret_arn : null,
+    var.secrets_arn_prefix != "" && var.secrets_arn_prefix != "*" ? var.secrets_arn_prefix : null,
+    "arn:${local.partition}:secretsmanager:${local.region}:${local.account_id}:secret:${var.name_prefix}-*"
+  ])
+
+  ssm_resources = length(var.ssm_parameter_arns) > 0 ? var.ssm_parameter_arns : [
+    "arn:${local.partition}:ssm:${local.region}:${local.account_id}:parameter/${var.name_prefix}/*",
+    "arn:${local.partition}:ssm:${local.region}:${local.account_id}:parameter/${var.name_prefix}*"
+  ]
+}
 
 # Common EC2 Assume Role Policy
 data "aws_iam_policy_document" "ec2_assume_role" {
@@ -96,21 +114,29 @@ resource "aws_iam_role_policy_attachment" "app_ecr" {
 
 resource "aws_iam_policy" "app_secrets" {
   name        = "${var.name_prefix}-app-secrets"
-  description = "Allows Application instances to retrieve DB credentials and app secrets"
+  description = "Allows Application instances to retrieve DB credentials and app secrets with least-privilege scoping"
 
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
+        Sid    = "ScopedSecretsAccess"
         Effect = "Allow"
         Action = [
           "secretsmanager:GetSecretValue",
-          "secretsmanager:DescribeSecret",
+          "secretsmanager:DescribeSecret"
+        ]
+        Resource = local.secrets_resources
+      },
+      {
+        Sid    = "ScopedSSMAccess"
+        Effect = "Allow"
+        Action = [
           "ssm:GetParameter",
           "ssm:GetParameters",
           "ssm:GetParametersByPath"
         ]
-        Resource = "*"
+        Resource = local.ssm_resources
       }
     ]
   })

@@ -18,6 +18,10 @@ import { CreateStudentDto } from './dto/create-student.dto';
 import { UpdateStudentDto } from './dto/update-student.dto';
 import { QueryStudentsDto } from './dto/query-students.dto';
 import { encryptTemporaryPassword } from './utils/credential-crypto.util';
+import {
+  normalizeSectionIdentifier,
+  isValidSectionFormat,
+} from '../common/constants/sections.constant';
 
 @Injectable()
 export class StudentsService {
@@ -365,38 +369,91 @@ export class StudentsService {
       defaultGroup?: string;
       defaultYear?: number;
       defaultUniversity?: string;
+      sheetName?: string;
     },
+    requireSheetSelection = false,
   ) {
     let workbook: xlsx.WorkBook;
     try {
-      workbook = xlsx.read(fileBuffer, { type: 'buffer' });
+      workbook = xlsx.read(fileBuffer, {
+        type: 'buffer',
+        cellFormula: false,
+        cellHTML: false,
+        cellNF: false,
+        cellStyles: false,
+        sheetStubs: false,
+        raw: true,
+        dense: true,
+      });
     } catch (e: any) {
       throw new BadRequestException(
         'Unable to parse spreadsheet file: ' + e.message,
       );
     }
 
-    const firstSheetName = workbook.SheetNames[0];
-    if (!firstSheetName) {
+    const sheetNames = workbook.SheetNames;
+    if (!sheetNames.length) {
       throw new BadRequestException(
         'The uploaded spreadsheet contains no sheets',
       );
     }
 
-    const rawRows = xlsx.utils.sheet_to_json<Record<string, any>>(
-      workbook.Sheets[firstSheetName],
+    const selectedSheet = defaultOptions?.sheetName || (!requireSheetSelection || sheetNames.length === 1 ? sheetNames[0] : null);
+    if (selectedSheet && !sheetNames.includes(selectedSheet)) {
+      throw new BadRequestException('Selected worksheet does not exist in the uploaded file');
+    }
+    if (!selectedSheet) {
+      return {
+        sheetNames,
+        selectedSheet: null,
+        total: 0,
+        valid: 0,
+        invalid: 0,
+        duplicates: 0,
+        errors: [],
+        previewRows: [],
+        validRows: [],
+      };
+    }
+
+    const rawParsed = xlsx.utils.sheet_to_json<Record<string, any>>(
+      workbook.Sheets[selectedSheet],
       { defval: '' },
     );
 
-    if (!rawRows || rawRows.length === 0) {
+    if (!rawParsed || rawParsed.length === 0) {
       throw new BadRequestException('Uploaded sheet is empty');
     }
 
+    if (rawParsed.length > 1000) {
+      throw new BadRequestException(
+        'Uploaded spreadsheet exceeds maximum allowed limit of 1,000 rows',
+      );
+    }
+
+    // Deep sanitize rows against Prototype Pollution (CVE-2023-30533, CVE-2024-22363)
+    const rawRows = rawParsed.map((row) => {
+      const clean: Record<string, any> = {};
+      for (const [key, val] of Object.entries(row)) {
+        const lowerKey = key.trim().toLowerCase();
+        if (
+          lowerKey === '__proto__' ||
+          lowerKey === 'constructor' ||
+          lowerKey === 'prototype'
+        ) {
+          continue;
+        }
+        clean[key] = typeof val === 'string' && val.length > 5000 ? val.slice(0, 5000) : val;
+      }
+      return clean;
+    });
+
+    const normalizeHeader = (value: string) => value.trim().toLowerCase().replace(/[\s\-_.]/g, '');
     const findField = (row: Record<string, any>, aliases: string[]): string => {
       const rowKeys = Object.keys(row);
       for (const alias of aliases) {
         const foundKey = rowKeys.find(
-          (k) => k.trim().toLowerCase() === alias.toLowerCase(),
+          (k) => normalizeHeader(k) === normalizeHeader(alias),
         );
         if (foundKey && row[foundKey] !== undefined && row[foundKey] !== null) {
           return String(row[foundKey]).trim();
@@ -416,6 +473,7 @@ export class StudentsService {
         'roll_no',
         'rollno',
         'roll number',
+        'roll no',
         'student_id',
         'studentid',
         'registration_no',
@@ -436,6 +494,7 @@ export class StudentsService {
         'student_email',
         'student email',
         'email_address',
+        'email id',
         'mail',
       ]).toLowerCase();
 
@@ -446,6 +505,7 @@ export class StudentsService {
         'phone_number',
         'contact',
         'contact_number',
+        'contact no',
         'mobile_no',
         'phoneno',
       ]);
@@ -462,10 +522,11 @@ export class StudentsService {
         findField(row, ['batch', 'year_of_study']) ||
         defaultOptions?.defaultBatch ||
         '';
-      const section =
+      const rawSection =
         findField(row, ['section', 'sec']) ||
         defaultOptions?.defaultSection ||
         '';
+      const section = normalizeSectionIdentifier(rawSection);
       const group =
         findField(row, ['group', 'grp']) ||
         defaultOptions?.defaultGroup ||
@@ -480,8 +541,10 @@ export class StudentsService {
         '';
 
       const rawSem = findField(row, ['semester', 'sem']);
+      // University sheets commonly write ordinal semesters such as "5th".
+      // Keep invalid values as NaN so the existing row validation reports them.
       const semester = rawSem
-        ? Number(rawSem)
+        ? Number(rawSem.replace(/(?:st|nd|rd|th)$/i, '').trim())
         : defaultOptions?.defaultSemester || 1;
 
       const rawYear = findField(row, ['year', 'grad_year', 'graduation_year']);
@@ -588,6 +651,12 @@ export class StudentsService {
         rowErrors.push('Semester must be a number between 1 and 12');
       }
 
+      if (row.section && !isValidSectionFormat(row.section)) {
+        rowErrors.push(
+          `Invalid section '${row.section}' (must be a valid section identifier such as A1, B4)`,
+        );
+      }
+
       if (!row.email) {
         rowErrors.push('Email is missing');
       } else if (!emailRegex.test(row.email)) {
@@ -631,6 +700,8 @@ export class StudentsService {
     }
 
     return {
+      sheetNames,
+      selectedSheet,
       total: parsedRows.length,
       valid: validRows.length,
       invalid,
@@ -650,6 +721,12 @@ export class StudentsService {
   ) {
     if (!validRows || validRows.length === 0) {
       throw new BadRequestException('No valid rows provided for import');
+    }
+
+    if (validRows.length > 500) {
+      throw new BadRequestException(
+        'Batch import exceeds maximum allowed limit of 500 students per batch',
+      );
     }
 
     const uids = [...new Set(validRows.map((r) => String(r.uid || '').toUpperCase().trim()))].filter(Boolean);
@@ -733,59 +810,72 @@ export class StudentsService {
     const usersToInsert: User[] = [];
     const emailJobsToInsert: EmailJob[] = [];
 
-    for (const row of rowsToInsert) {
-      const rawPassword =
-        row.password && String(row.password).trim()
-          ? String(row.password).trim()
-          : this.generateSecurePassword(12);
-      const hashedPassword = await bcrypt.hash(rawPassword, salt);
+    // Process bcrypt hashing with bounded concurrency (5 per batch) to fully utilize
+    // libuv threadpool without starvation or request timeouts (ISSUE-PRF-002)
+    const HASH_BATCH_SIZE = 5;
+    for (let i = 0; i < rowsToInsert.length; i += HASH_BATCH_SIZE) {
+      const chunk = rowsToInsert.slice(i, i + HASH_BATCH_SIZE);
+      const hashedChunk = await Promise.all(
+        chunk.map(async (row) => {
+          const rawPassword =
+            row.password && String(row.password).trim()
+              ? String(row.password).trim()
+              : this.generateSecurePassword(12);
+          const hashedPassword = await bcrypt.hash(rawPassword, salt);
+          return { row, rawPassword, hashedPassword };
+        }),
+      );
 
-      const cleanMobile = row.mobile
-        ? String(row.mobile).replace(/[\s\-().]/g, '')
-        : '';
+      for (const { row, rawPassword, hashedPassword } of hashedChunk) {
+        const cleanMobile = row.mobile
+          ? String(row.mobile).replace(/[\s\-().]/g, '')
+          : '';
 
-      const u = this.userRepository.create({
-        name: String(row.name).trim(),
-        email: String(row.email).toLowerCase().trim(),
-        uid: String(row.uid).toUpperCase().trim(),
-        password: hashedPassword,
-        role: 'student',
-        isAssessmentStudent: true,
-        forcePasswordChange: true,
-        isActive: true,
-        authProvider: 'local',
-        studentProfile: {
-          university:
-            row.university || defaultOptions?.defaultUniversity || '',
-          department:
-            row.department || defaultOptions?.defaultDepartment || '',
-          course: row.course || defaultOptions?.defaultCourse || '',
-          semester:
-            row.semester || defaultOptions?.defaultSemester || 1,
-          section: row.section || defaultOptions?.defaultSection || '',
-          group: row.group || defaultOptions?.defaultGroup || '',
-          batch: row.batch || defaultOptions?.defaultBatch || '',
-          year:
-            row.year ||
-            defaultOptions?.defaultYear ||
-            new Date().getFullYear(),
-          ...(cleanMobile
-            ? { mobile: cleanMobile, phone: cleanMobile }
-            : {}),
-        },
-      });
-      usersToInsert.push(u);
+        const u = this.userRepository.create({
+          name: String(row.name).trim(),
+          email: String(row.email).toLowerCase().trim(),
+          uid: String(row.uid).toUpperCase().trim(),
+          password: hashedPassword,
+          role: 'student',
+          isAssessmentStudent: true,
+          forcePasswordChange: true,
+          isActive: true,
+          authProvider: 'local',
+          studentProfile: {
+            university:
+              row.university || defaultOptions?.defaultUniversity || '',
+            department:
+              row.department || defaultOptions?.defaultDepartment || '',
+            course: row.course || defaultOptions?.defaultCourse || '',
+            semester:
+              row.semester || defaultOptions?.defaultSemester || 1,
+            section: normalizeSectionIdentifier(
+              row.section || defaultOptions?.defaultSection || '',
+            ),
+            group: row.group || defaultOptions?.defaultGroup || '',
+            batch: row.batch || defaultOptions?.defaultBatch || '',
+            year:
+              row.year ||
+              defaultOptions?.defaultYear ||
+              new Date().getFullYear(),
+            ...(cleanMobile
+              ? { mobile: cleanMobile, phone: cleanMobile }
+              : {}),
+          },
+        });
+        usersToInsert.push(u);
 
-      const job = this.emailJobRepo.create({
-        uid: u.uid,
-        email: u.email,
-        name: u.name,
-        temporaryPassword: encryptTemporaryPassword(rawPassword),
-        status: 'pending',
-        retryCount: 0,
-        createdBy: adminUser?.id || adminUser?._id,
-      });
-      emailJobsToInsert.push(job);
+        const job = this.emailJobRepo.create({
+          uid: u.uid,
+          email: u.email,
+          name: u.name,
+          temporaryPassword: encryptTemporaryPassword(rawPassword),
+          status: 'pending',
+          retryCount: 0,
+          createdBy: adminUser?.id || adminUser?._id,
+        });
+        emailJobsToInsert.push(job);
+      }
     }
 
     // Process inserts inside a database transaction for complete data integrity

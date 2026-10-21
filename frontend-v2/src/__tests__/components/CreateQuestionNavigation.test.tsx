@@ -38,8 +38,9 @@ function mount() {
 it("scrolls every DSA item in both orders and selects it immediately", () => {
   const { nav, container } = mount();
   const buttons = nav.getAllByRole("button");
-  expect(buttons).toHaveLength(12);
-  expect(nav.getByRole("button", { name: "Examples" })).toBeInTheDocument();
+  // Sample examples are part of the unified Test Cases section now.
+  expect(buttons).toHaveLength(11);
+  expect(nav.queryByRole("button", { name: "Sample Test Cases" })).toBeNull();
   for (const button of [...buttons, ...[...buttons].reverse()]) {
     fireEvent.click(button);
     const id = useQuestionStore.getState().activeSection;
@@ -131,28 +132,4 @@ it("keeps draft saving and publishing functional", async () => {
   expect(adminQuestionsAPI.create).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Publish to Question Bank" }));
   await waitFor(() => expect(adminQuestionsAPI.create).toHaveBeenCalledWith(expect.objectContaining({ question: "Example", questionType: "CODE_OUTPUT", expectedOutput: "42" })));
-});
-
-it("publishes authored examples independently of public and hidden judge cases", async () => {
-  mount();
-  act(() => {
-    const state = useQuestionStore.getState();
-    state.updateMetadata({ title: "Separate examples", slug: "separate-examples", questionType: "DSA" });
-    state.setAllData({ testCases: [
-      { id: "public", input: "judge input", output: "judge output", isHidden: false, explanation: "", weight: 1 },
-      { id: "hidden", input: "secret", output: "secret answer", isHidden: true, explanation: "", weight: 1 },
-    ] });
-  });
-  fireEvent.click(screen.getByRole("button", { name: "Add Example" }));
-  fireEvent.change(screen.getByLabelText("Example 1 input"), { target: { value: "example input" } });
-  fireEvent.change(screen.getByLabelText("Example 1 output"), { target: { value: "example output" } });
-  fireEvent.change(screen.getByLabelText("Example 1 explanation"), { target: { value: "Explain the example" } });
-  fireEvent.click(screen.getByRole("button", { name: "Publish to Question Bank" }));
-  await waitFor(() => expect(adminQuestionsAPI.create).toHaveBeenCalledWith(expect.objectContaining({
-    examples: [{ input: "example input", output: "example output", explanation: "Explain the example" }],
-    testCases: [
-      expect.objectContaining({ input: "judge input", expectedOutput: "judge output", isHidden: false }),
-      expect.objectContaining({ input: "secret", expectedOutput: "secret answer", isHidden: true }),
-    ],
-  })));
 });

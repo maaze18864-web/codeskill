@@ -186,7 +186,7 @@ describe('Question DTOs Constraints Validation & Transformation', () => {
 // The global pipe runs with `whitelist: true`. Nested shapes declared as inline
 // object types lose every property, so test cases were persisted as empty
 // records. These tests pin the @ValidateNested wiring that prevents that.
-describe('CreateQuestionDto nested payloads survive the whitelist pipe', () => {
+describe.each([CreateQuestionDto, UpdateQuestionDto])('%p nested payloads survive the whitelist pipe', (Dto) => {
   const pipe = new ValidationPipe({
     whitelist: true,
     forbidNonWhitelisted: false,
@@ -195,7 +195,7 @@ describe('CreateQuestionDto nested payloads survive the whitelist pipe', () => {
   });
   const base = { topic: 'Arrays', difficulty: 'medium', marks: 5, questionType: 'DSA' };
   const transform = (body: Record<string, unknown>) =>
-    pipe.transform({ ...base, ...body }, { type: 'body', metatype: CreateQuestionDto });
+    pipe.transform({ ...base, ...body }, { type: 'body', metatype: Dto });
 
   it('keeps test case fields', async () => {
     const dto = await transform({
@@ -206,7 +206,7 @@ describe('CreateQuestionDto nested payloads survive the whitelist pipe', () => {
         { input: '9 1\n', expectedOutput: '10', isHidden: true },
       ],
     });
-    expect(dto.testCases).toEqual([
+    expect(JSON.parse(JSON.stringify(dto.testCases))).toEqual([
       { input: '2 3\n', expectedOutput: '5', isHidden: false, explanation: '2 + 3 = 5' },
       { input: '9 1\n', expectedOutput: '10', isHidden: true },
     ]);
@@ -238,5 +238,16 @@ describe('CreateQuestionDto nested payloads survive the whitelist pipe', () => {
     expect(dto.referenceSolutions).toEqual([
       { language: 'python', sourceCode: 'print(input())' },
     ]);
+  });
+
+  it('allows clearing nested collections explicitly', async () => {
+    const dto = await transform({ testCases: [], examples: [], starterCode: [], referenceSolutions: [] });
+    expect(JSON.parse(JSON.stringify(dto))).toMatchObject({
+      testCases: [], examples: [], starterCode: [], referenceSolutions: [],
+    });
+  });
+
+  it('rejects corrupted nested arrays instead of persisting missing fields', async () => {
+    await expect(transform({ testCases: [[], []] })).rejects.toThrow();
   });
 });

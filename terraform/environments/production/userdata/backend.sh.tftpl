@@ -158,11 +158,6 @@ ExecStop=/usr/bin/docker stop -t 30 codeskill-backend
 WantedBy=multi-user.target
 EOF
 
-# Run the migration in the same image/configuration before accepting requests.
-docker run --rm --env-file /opt/codeskill/backend.env \
-  -v /opt/codeskill/rds-global-bundle.pem:/app/certs/rds-global-bundle.pem:ro \
-  "$IMAGE" node dist/database/run-practice-submission-source.js
-
 # 6. Start Backend Service
 systemctl daemon-reload
 systemctl enable --now codeskill-backend.service
@@ -182,6 +177,49 @@ done
 if [ "$READY" != true ]; then echo "Backend readiness probe failed" >&2; exit 1; fi
 
 echo "CodeSkill Backend instance ready at $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+
+# 7. Register with AWS Cloud Map Private DNS Service
+CLOUD_MAP_SERVICE_ID="${backend_service_id}"
+if [ -n "$CLOUD_MAP_SERVICE_ID" ]; then
+  TOKEN=$(curl -s -S -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 60" 2>/dev/null || true)
+  INSTANCE_ID=$(curl -s -S -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null || true)
+  PRIVATE_IP=$(curl -s -S -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/local-ipv4 2>/dev/null || true)
+  if [ -n "$INSTANCE_ID" ] && [ -n "$PRIVATE_IP" ]; then
+    echo "Registering $INSTANCE_ID ($PRIVATE_IP) with Cloud Map Service $CLOUD_MAP_SERVICE_ID..."
+    aws servicediscovery register-instance \
+      --service-id "$CLOUD_MAP_SERVICE_ID" \
+      --instance-id "$INSTANCE_ID" \
+      --attributes AWS_INSTANCE_IPV4="$PRIVATE_IP",AWS_INSTANCE_PORT=5001 \
+      --region "$REGION" || true
+  fi
+fi
+
+cat << 'EOF' > /usr/local/bin/deregister-cloudmap.sh
+#!/bin/bash
+TOKEN=$(curl -s -S -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 60" 2>/dev/null || true)
+INSTANCE_ID=$(curl -s -S -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/meta-data/instance-id 2>/dev/null || true)
+if [ -n "$INSTANCE_ID" ]; then
+  aws servicediscovery deregister-instance --service-id "${backend_service_id}" --instance-id "$INSTANCE_ID" --region "${aws_region}" || true
+fi
+EOF
+chmod +x /usr/local/bin/deregister-cloudmap.sh
+
+cat << 'EOF' > /etc/systemd/system/deregister-cloudmap.service
+[Unit]
+Description=Deregister Backend Instance from AWS Cloud Map on Shutdown
+DefaultDependencies=no
+Before=shutdown.target reboot.target halt.target network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/deregister-cloudmap.sh
+TimeoutSec=20
+
+[Install]
+WantedBy=shutdown.target reboot.target halt.target
+EOF
+systemctl daemon-reload
+systemctl enable deregister-cloudmap.service
 
 # 8. Start Grafana Alloy for Observability Metrics
 mkdir -p /etc/alloy /var/lib/alloy/data

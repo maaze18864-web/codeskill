@@ -112,6 +112,9 @@ export class AssessmentAttempt {
   @Column({ type: 'int', default: 1 })
   attemptNumber?: number;
 
+  @Column({ type: 'int', default: 0 })
+  resumeCount: number;
+
   @Column({ type: 'float', default: 0 })
   maxScore: number;
 

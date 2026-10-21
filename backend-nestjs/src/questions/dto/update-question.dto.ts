@@ -6,9 +6,17 @@ import {
   IsIn,
   IsBoolean,
   ValidateIf,
+  ValidateNested,
+  IsObject,
 } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  QuestionExampleDto,
+  QuestionTestCaseDto,
+  StarterCodeDto,
+  ReferenceSolutionDto,
+} from './create-question.dto';
 
 export class UpdateQuestionDto {
   @ApiPropertyOptional()
@@ -216,7 +224,10 @@ export class UpdateQuestionDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsArray()
-  examples?: Array<{ input: string; output: string; explanation?: string }>;
+  @ValidateNested({ each: true })
+  @Type(() => QuestionExampleDto)
+  @IsObject({ each: true })
+  examples?: QuestionExampleDto[];
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -231,7 +242,10 @@ export class UpdateQuestionDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsArray()
-  starterCode?: Array<{ language: string; code: string }>;
+  @ValidateNested({ each: true })
+  @Type(() => StarterCodeDto)
+  @IsObject({ each: true })
+  starterCode?: StarterCodeDto[];
 
   @ApiPropertyOptional()
   @IsOptional()
@@ -257,18 +271,18 @@ export class UpdateQuestionDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsArray()
-  testCases?: Array<{
-    id: string;
-    input: string;
-    expectedOutput: string;
-    isHidden: boolean;
-    weight: number;
-  }>;
+  @ValidateNested({ each: true })
+  @Type(() => QuestionTestCaseDto)
+  @IsObject({ each: true })
+  testCases?: QuestionTestCaseDto[];
 
   @ApiPropertyOptional()
   @IsOptional()
   @IsArray()
-  referenceSolutions?: Array<{ language: string; sourceCode: string }>;
+  @ValidateNested({ each: true })
+  @Type(() => ReferenceSolutionDto)
+  @IsObject({ each: true })
+  referenceSolutions?: ReferenceSolutionDto[];
 
   @ApiPropertyOptional()
   @IsOptional()

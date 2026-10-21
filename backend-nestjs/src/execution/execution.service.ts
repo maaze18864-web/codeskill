@@ -238,7 +238,7 @@ export class ExecutionService {
   ) {}
 
   get provider(): string {
-    const provider = process.env.CODE_EXECUTION_PROVIDER || 'judge0';
+    const provider = process.env.CODE_EXECUTION_PROVIDER || 'piston';
     if (!['legacy', 'piston', 'judge0'].includes(provider))
       throw new Error('Invalid CODE_EXECUTION_PROVIDER');
     return provider;

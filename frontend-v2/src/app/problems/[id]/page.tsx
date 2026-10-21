@@ -18,10 +18,11 @@ import PracticeConfetti from "@/components/Result/PracticeConfetti";
 import SubmissionDetails from "@/components/Result/SubmissionDetails";
 import SampleTestCasesPanel, { hasSampleContent } from "@/components/problems/SampleTestCasesPanel";
 import { ExecutionFeedbackResult, normalizeVerdict } from "@/lib/submission-feedback";
-import { editorLanguages, canonicalEditorLanguage } from '@/lib/editor-languages';
+import { editorLanguages, canonicalEditorLanguage, editorStarterCode } from '@/lib/editor-languages';
 import { ProgrammingLanguageIcon } from "@/components/ui/ProgrammingLanguageIcon";
+import { publicProblemRunCases } from "@/lib/problem-run-cases";
 import Link from "next/link";
-import { useState, useEffect, useCallback, use, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, use, useRef } from "react";
 import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from "react-resizable-panels";
 import Editor from "@monaco-editor/react";
 import { submissionAPI, runAPI, problemsAPI, discussionsAPI, type ProblemStats } from "@/config/api";
@@ -73,6 +74,7 @@ export default function ProblemWorkspace({ params }: { params: Promise<{ id: str
   const { theme: appTheme } = useTheme();
   
   const [problem, setProblem] = useState<any>(null);
+  const testCases = useMemo(() => publicProblemRunCases(problem), [problem]);
   const [loading, setLoading] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -246,7 +248,7 @@ export default function ProblemWorkspace({ params }: { params: Promise<{ id: str
       setCode(savedDraft);
     } else {
       // Use starter code from problem config if available, else language default
-      const starterCode = problem.config?.starterCode?.[language];
+      const starterCode = editorStarterCode(problem.config?.starterCode, language);
       const defaultCode = starterCode || LANGUAGES.find(l => l.id === language)?.defaultCode || "";
       setCode(defaultCode);
     }
@@ -436,15 +438,7 @@ export default function ProblemWorkspace({ params }: { params: Promise<{ id: str
 
   const formattedElapsed = `${String(Math.floor(elapsedSeconds / 3600)).padStart(2, "0")}:${String(Math.floor((elapsedSeconds % 3600) / 60)).padStart(2, "0")}:${String(elapsedSeconds % 60).padStart(2, "0")}`;
 
-  const getTestCases = () => {
-    if (!problem || !problem.testCases || !problem.testCases.cases || problem.testCases.cases.length === 0) {
-      return [];
-    }
-    // Only public cases are shown and run in the terminal; hidden cases are judge-only.
-    return problem.testCases.cases
-      .filter((tc: any) => tc.isHidden !== true && hasSampleContent(tc))
-      .map((tc: any, i: number) => ({ id: i + 1, input: tc.input, expected: tc.output }));
-  };
+  const getTestCases = () => testCases;
 
   const executeCode = async () => {
     const apiTestCases = getTestCases().map((tc: any) => ({
@@ -621,7 +615,7 @@ export default function ProblemWorkspace({ params }: { params: Promise<{ id: str
 
   const handleResetCode = () => {
     if (!problem) return;
-    const starterCode = problem.config?.starterCode?.[language];
+    const starterCode = editorStarterCode(problem.config?.starterCode, language);
     const defaultCode = starterCode || LANGUAGES.find(l => l.id === language)?.defaultCode || "";
     setCode(defaultCode);
     localStorage.removeItem(`codeskill_draft_${problem.slug}_${language}`);
@@ -678,8 +672,12 @@ export default function ProblemWorkspace({ params }: { params: Promise<{ id: str
   const editorTheme = editorThemeName === "auto"
     ? (appTheme === "dark" ? "vs-dark" : "codeskill-hackerrank")
     : editorThemeName;
-  const testCases = getTestCases();
-  const displaySamples = (problem.statement?.samples ?? []).filter(hasSampleContent);
+  // Left-panel examples fall back to the public (non-hidden) test cases.
+  const displaySamples = problem.statement?.samples?.length
+    ? problem.statement.samples.filter(hasSampleContent)
+    : (problem.testCases?.cases || [])
+        .filter((tc: any) => tc.isHidden !== true && hasSampleContent(tc))
+        .map((tc: any) => ({ input: tc.input, output: tc.output, explanation: tc.explanation }));
   const difficultyClass = DIFFICULTY_COLORS[problem.difficulty] || DIFFICULTY_COLORS.Easy;
   const displayedStats = problemStats ?? problem.stats;
   const totalProblemSubmissions = displayedStats?.totalSubmissions ?? 0;
@@ -1027,10 +1025,17 @@ export default function ProblemWorkspace({ params }: { params: Promise<{ id: str
                     {activeSidebarTab === "samples" && (
                       <div className="p-5">
                         <h3 className="text-xs font-bold text-foreground uppercase tracking-wider mb-3">
-                          Examples
+                          Sample Test Cases
                         </h3>
                         <SampleTestCasesPanel
                           samples={displaySamples}
+                          onLoad={(sample) => {
+                            const match = testCases.findIndex(
+                              (tc: any) => (tc.input || "") === (sample.input || ""),
+                            );
+                            setActiveTestCase(match >= 0 ? match : 0);
+                            setActiveBottomTab("testcases");
+                          }}
                         />
                       </div>
                     )}

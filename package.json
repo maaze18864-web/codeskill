@@ -18,6 +18,8 @@
     "build:backend": "npm run build --prefix backend-nestjs",
     "build:frontend": "npm run build --prefix frontend-v2",
     "build": "npm run install:all && npm run build:backend && npm run build:frontend",
+    "admin:bootstrap": "npm run --prefix backend-nestjs admin:bootstrap --",
+    "admin:batch": "npm run --prefix backend-nestjs admin:batch",
     "start": "pm2 start ecosystem.config.js",
     "stop": "pm2 stop ecosystem.config.js",
     "restart": "pm2 restart ecosystem.config.js --update-env"

@@ -28,7 +28,7 @@ import {
 import { runAPI, studentAssessmentsAPI } from "@/config/api";
 import { awaitExecution } from "@/lib/await-execution";
 import ExecutionFeedback from '@/components/Result/ExecutionFeedback';
-import SampleTestCasesPanel, { hasSampleContent, type SampleCase } from '@/components/problems/SampleTestCasesPanel';
+import { hasSampleContent } from '@/components/problems/SampleTestCasesPanel';
 import { Spinner } from "@/components/ui/spinner";
 
 const LANGUAGES = [
@@ -177,7 +177,6 @@ interface DSAAssessmentEditorProps {
     timeLimit?: number;
     memoryLimit?: number;
     testCases?: TestCase[];
-    examples?: SampleCase[];
   };
   savedResponse?: {
     code?: string;
@@ -256,7 +255,6 @@ export default function DSAAssessmentEditor({
   const sampleCases: TestCase[] = (question.testCases || []).filter(
     (tc) => !tc.isHidden && hasSampleContent(tc),
   );
-  const examples = (question.examples ?? []).filter(hasSampleContent);
 
   // The parent keys this workspace by question ID. Drafts are restored from
   // attempt state on each mount; saving does not reset the active editor model.
@@ -512,19 +510,58 @@ export default function DSAAssessmentEditor({
             </div>
           </div>
 
-          {/* Instructional examples are independent of execution tests. */}
+          {/* Example Test Cases (LeetCode Style) */}
           <div className="space-y-4">
             <h3 className="text-xs font-bold uppercase tracking-wider text-foreground flex items-center gap-1.5">
-              <Layers className="w-3.5 h-3.5 text-primary" /> Examples
+              <Layers className="w-3.5 h-3.5 text-primary" /> Examples & Test Cases
             </h3>
 
-            <SampleTestCasesPanel
-              samples={examples}
-              onLoad={(sample) => {
-                setCustomInput(sample.input ?? "");
-                setBottomTab("custom_input");
-              }}
-            />
+            {sampleCases.length > 0 ? (
+              sampleCases.map((tc, idx) => (
+                <div
+                  key={idx}
+                  className="rounded-xl border border-border/80 bg-zinc-950/60 p-4 space-y-2.5 font-mono text-xs"
+                >
+                  <div className="font-sans font-bold text-foreground text-xs flex items-center justify-between">
+                    <span>Example {idx + 1}</span>
+                    <button
+                      onClick={() => {
+                        setSelectedTestCaseIndex(idx);
+                        setCustomInput(tc.input);
+                        setBottomTab("testcases");
+                      }}
+                      className="text-[11px] text-primary hover:underline font-mono"
+                    >
+                      Load in Console
+                    </button>
+                  </div>
+
+                  <div>
+                    <span className="text-muted-foreground font-semibold">Input:</span>
+                    <pre className="mt-1 p-2 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-200 overflow-x-auto whitespace-pre-wrap">
+                      {tc.input}
+                    </pre>
+                  </div>
+
+                  <div>
+                    <span className="text-muted-foreground font-semibold">Expected Output:</span>
+                    <pre className="mt-1 p-2 rounded-lg bg-zinc-900 border border-zinc-800 text-emerald-400 font-bold overflow-x-auto whitespace-pre-wrap">
+                      {tc.expected || tc.output}
+                    </pre>
+                  </div>
+
+                  {tc.explanation && (
+                    <div className="text-[11px] text-muted-foreground font-sans pt-1 border-t border-zinc-800/80">
+                      <strong className="text-foreground">Explanation:</strong> {tc.explanation}
+                    </div>
+                  )}
+                </div>
+              ))
+            ) : (
+              <p className="text-xs text-muted-foreground italic">
+                Read input from standard input (stdin) and write solution to standard output (stdout).
+              </p>
+            )}
           </div>
         </div>
       </div>

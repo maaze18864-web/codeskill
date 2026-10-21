@@ -6,9 +6,11 @@ import {
   IsNumber,
   IsBoolean,
   ValidateNested,
+  Matches,
 } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { normalizeSectionIdentifier } from '../../common/constants/sections.constant';
 
 export class StudentProfileDto {
   @ApiPropertyOptional({ example: 'Chandigarh University' })
@@ -34,6 +36,10 @@ export class StudentProfileDto {
 
   @ApiPropertyOptional({ example: 'A1' })
   @IsOptional()
+  @Transform(({ value }) => (value ? normalizeSectionIdentifier(value) : value))
+  @Matches(/^[A-Za-z0-9_\-]{1,16}$/, {
+    message: 'Section must be a valid section identifier (e.g. A1, B4)',
+  })
   @IsString()
   section?: string;
 

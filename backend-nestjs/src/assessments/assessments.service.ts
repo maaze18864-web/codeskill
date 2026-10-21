@@ -11,7 +11,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, In, Not } from 'typeorm';
+import { Repository, In, Not, LessThan } from 'typeorm';
 import { Assessment } from '../database/entities/assessment.entity';
 import { AssessmentAttempt } from '../database/entities/assessment-attempt.entity';
 import { Question } from '../database/entities/question.entity';
@@ -26,6 +26,7 @@ import { S3Service } from '../s3/s3.service';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { EvaluateAssessmentCodeDto } from './dto/evaluate-code.dto';
+import { normalizeSectionIdentifier } from '../common/constants/sections.constant';
 
 function codingTestCases(question: Question): Array<{ id: string | number; input: string; expected: string; isHidden: boolean }> {
   const cases = question.testCases?.length ? question.testCases : (question.metadata as any)?.testCases || [];
@@ -34,6 +35,8 @@ function codingTestCases(question: Question): Array<{ id: string | number; input
     expected: tc.expectedOutput ?? tc.output ?? tc.expected ?? '', isHidden: tc.isHidden === true,
   }));
 }
+
+const MAX_RESUME_ATTEMPTS = 3;
 
 @Injectable()
 export class AssessmentsService {
@@ -54,6 +57,27 @@ export class AssessmentsService {
     private readonly s3Service?: S3Service,
     @Optional() @InjectQueue('submissions') private readonly codeQueue?: Queue,
   ) {}
+
+  private attemptExpiresAt(assessment: Assessment, attempt: AssessmentAttempt): Date {
+    const durationMinutes = Number(assessment.durationMinutes) > 0
+      ? Number(assessment.durationMinutes)
+      : 45;
+    const durationDeadline = new Date(attempt.startedAt).getTime() + durationMinutes * 60_000;
+    const windowDeadline = assessment.endTime
+      ? new Date(assessment.endTime).getTime()
+      : Infinity;
+    return new Date(Math.min(durationDeadline, windowDeadline));
+  }
+
+  private resumeDetails(assessment: Assessment, attempt: AssessmentAttempt) {
+    const resumeAttemptsUsed = Math.max(0, attempt.resumeCount || 0);
+    return {
+      attemptExpiresAt: this.attemptExpiresAt(assessment, attempt),
+      resumeAttemptsUsed,
+      resumeAttemptsRemaining: Math.max(0, MAX_RESUME_ATTEMPTS - resumeAttemptsUsed),
+      maxResumeAttempts: MAX_RESUME_ATTEMPTS,
+    };
+  }
 
   private shuffleList<T>(items: T[]): T[] {
     const next = [...items];
@@ -409,7 +433,7 @@ export class AssessmentsService {
       targetBatches: dto.targetBatches || [],
       targetDepartments: dto.targetDepartments || [],
       targetCourses: dto.targetCourses || [],
-      targetSections: dto.targetSections || [],
+      targetSections: this.normalizeTargetSections(dto.targetSections),
       targetGroups: this.normalizeTargetGroups(dto.targetGroups || []),
       targetStudentIds: dto.targetStudentIds || [],
       targetSemesters: dto.targetSemesters || [],
@@ -638,7 +662,7 @@ export class AssessmentsService {
     if (dto.targetCourses !== undefined)
       assessment.targetCourses = dto.targetCourses;
     if (dto.targetSections !== undefined)
-      assessment.targetSections = dto.targetSections;
+      assessment.targetSections = this.normalizeTargetSections(dto.targetSections);
     if (dto.targetGroups !== undefined)
       assessment.targetGroups = this.normalizeTargetGroups(dto.targetGroups);
     if (dto.targetStudentIds !== undefined)
@@ -1031,15 +1055,34 @@ export class AssessmentsService {
       !normalizedTargetSemesters.length ||
       (!!studentSem && normalizedTargetSemesters.includes(studentSem));
 
+    const studentSection = normalizeSectionIdentifier(profile.section || '');
+    const normalizedTargetSections = this.normalizeTargetSections(
+      assessment.targetSections,
+    );
+    const matchesSection =
+      !normalizedTargetSections.length ||
+      (!!studentSection &&
+        normalizedTargetSections
+          .map((s) => s.toLowerCase())
+          .includes(studentSection.toLowerCase()));
+
     return (
       (!assessment.targetStudentIds?.length || studentKeys.some((key) => assessment.targetStudentIds.includes(key))) &&
       matches(assessment.targetBatches, batch) &&
       matches(assessment.targetDepartments, dept) &&
       matches(assessment.targetCourses, profile.course || '') &&
       matchesSemester &&
-      matches(assessment.targetSections, profile.section || '') &&
+      matchesSection &&
       matches(assessment.targetGroups, group)
     );
+  }
+
+  private normalizeTargetSections(sections?: string[]): string[] {
+    if (!sections || !Array.isArray(sections)) return [];
+    const normalized = sections
+      .map((sec) => normalizeSectionIdentifier(sec))
+      .filter(Boolean);
+    return [...new Set(normalized)];
   }
 
   private normalizeTargetGroups(groups: string[]): string[] {
@@ -1146,11 +1189,17 @@ export class AssessmentsService {
               .map((q) => q.difficulty),
           ),
         ],
-        attemptStatus: isCompleted
-          ? 'submitted'
-          : inProgressAttempt
-            ? 'in_progress'
+        attemptStatus: inProgressAttempt
+          ? 'in_progress'
+          : isCompleted
+            ? 'submitted'
             : 'not_started',
+        ...(inProgressAttempt
+          ? {
+              attemptStartedAt: inProgressAttempt.startedAt,
+              ...this.resumeDetails(a, inProgressAttempt),
+            }
+          : {}),
         attemptScore: maxScore,
         attemptPassed: hasPassed,
         highestScore: maxScore,
@@ -1260,6 +1309,9 @@ export class AssessmentsService {
           startedAt: latestAttempt.startedAt,
           submittedAt: latestAttempt.submittedAt,
           attemptNumber: latestAttempt.attemptNumber,
+          ...(latestAttempt.status === 'in_progress'
+            ? this.resumeDetails(assessment, latestAttempt)
+            : {}),
         }
         : null,
       canRetake,
@@ -1352,6 +1404,7 @@ export class AssessmentsService {
         status: 'in_progress',
         startedAt: new Date(),
         attemptNumber: attemptNum,
+        resumeCount: 0,
         highestScore: highestPreviousScore,
         questionOrder: orderedIds,
         maxScore: assessment.totalMarks,
@@ -1369,6 +1422,33 @@ export class AssessmentsService {
       });
 
       await this.attemptRepo.save(attempt);
+    } else {
+      if (now.getTime() >= this.attemptExpiresAt(assessment, attempt).getTime()) {
+        throw new BadRequestException('This assessment attempt has run out of time.');
+      }
+      const previousResumeCount = attempt.resumeCount || 0;
+      if (previousResumeCount >= MAX_RESUME_ATTEMPTS) {
+        throw new BadRequestException('All 3 resume opportunities have been used for this attempt.');
+      }
+
+      // The database claims one resume atomically, including when two tabs open together.
+      const claimed = await this.attemptRepo.update(
+        {
+          id: attempt.id,
+          studentId,
+          status: 'in_progress',
+          resumeCount: LessThan(MAX_RESUME_ATTEMPTS),
+        },
+        { resumeCount: () => '"resumeCount" + 1' },
+      );
+      if (!claimed.affected) {
+        throw new BadRequestException('No resume opportunities remain for this assessment attempt.');
+      }
+      const updatedAttempt = await this.attemptRepo.findOne({ where: { id: attempt.id } });
+      attempt.resumeCount = Math.max(
+        previousResumeCount + 1,
+        updatedAttempt?.resumeCount || 0,
+      );
     }
 
     const sanitizedQuestions = (attempt.questionOrder || [])
@@ -1405,13 +1485,6 @@ export class AssessmentsService {
               : (q.metadata as any)?.constraints || [],
           timeLimit: q.timeLimit || (q.metadata as any)?.timeLimit || 2000,
           memoryLimit: q.memoryLimit || (q.metadata as any)?.memoryLimit || 256,
-          examples: (Array.isArray(q.examples) ? q.examples : [])
-            .filter((example) => !('isHidden' in example && example.isHidden === true))
-            .map((example) => ({
-              input: example.input || '',
-              output: example.output || '',
-              explanation: example.explanation || '',
-            })),
           testCases: codingTestCases(q)
             .filter((tc: any) => !tc.isHidden)
             .map((tc: any, tcIdx: number) => ({
@@ -1438,6 +1511,7 @@ export class AssessmentsService {
       _id: attempt.id,
       startedAt: attempt.startedAt,
       durationMinutes: assessment.durationMinutes,
+      ...this.resumeDetails(assessment, attempt),
       proctoring: assessment.proctoring,
       questions: sanitizedQuestions,
       savedResponses: attempt.responses,
@@ -1454,11 +1528,12 @@ export class AssessmentsService {
       throw new ForbiddenException('This assessment is not assigned to your student account.');
     }
 
-    await this.attemptRepo.delete({
-      assessmentId: assessment.id,
-      studentId,
-      status: 'in_progress',
+    const activeAttempt = await this.attemptRepo.findOne({
+      where: { assessmentId: assessment.id, studentId, status: 'in_progress' },
     });
+    if (activeAttempt) {
+      throw new BadRequestException('An attempt is already in progress. Resume it instead of starting over.');
+    }
 
     return this.startStudentAttempt(assessment.id, studentUser);
   }
@@ -1733,9 +1808,27 @@ export class AssessmentsService {
     }
 
     if (attempt.status === 'evaluating') {
-      throw new ConflictException(
-        'Assessment submission is currently being evaluated. Please wait.',
-      );
+      const evaluatingDurationMs =
+        Date.now() - new Date(attempt.updatedAt || attempt.startedAt).getTime();
+      const LEASE_TIMEOUT_MS = 60_000;
+      if (evaluatingDurationMs > LEASE_TIMEOUT_MS) {
+        this.logger.warn({
+          message: `Attempt ${attempt.id} evaluation lease expired (${evaluatingDurationMs}ms). Reclaiming attempt.`,
+          attemptId: attempt.id,
+          studentId,
+        });
+        if (typeof this.attemptRepo.update === 'function') {
+          await this.attemptRepo.update(
+            { id: attempt.id, status: 'evaluating' as any },
+            { status: 'in_progress' as any },
+          );
+        }
+        attempt.status = 'in_progress';
+      } else {
+        throw new ConflictException(
+          'Assessment submission is currently being evaluated. Please wait.',
+        );
+      }
     }
 
     // Atomic CAS transition: in_progress -> evaluating to prevent duplicate concurrent evaluations
@@ -1758,8 +1851,9 @@ export class AssessmentsService {
       attempt.status = 'evaluating' as any;
     }
 
-    // Accept before the deadline; execution may finish after it.
-    const now = new Date();
+    try {
+      // Accept before the deadline; execution may finish after it.
+      const now = new Date();
     if (assessment.endTime) {
       const deadline = new Date(assessment.endTime);
       if (now > deadline) {
@@ -1784,15 +1878,7 @@ export class AssessmentsService {
         : [];
     const questionMap = new Map(questions.map((q) => [q.id, q]));
 
-    let totalScore = 0;
-    let totalAttempted = 0;
-    let totalCorrect = 0;
-    let totalWrong = 0;
-    let totalSkipped = 0;
-
-    const evaluatedResponses: any[] = [];
     const seenQuestionIds = new Set<string>();
-
     for (const r of dto.responses || []) {
       const qId = String(r.questionId);
       if (seenQuestionIds.has(qId)) {
@@ -1801,175 +1887,188 @@ export class AssessmentsService {
         );
       }
       seenQuestionIds.add(qId);
+    }
 
-      const q = questionMap.get(qId);
-      if (!q) {
-        evaluatedResponses.push({
-          questionId: String(r.questionId),
-          selectedAnswer: r.selectedAnswer ?? -1,
-          isCorrect: false,
-          marksAwarded: 0,
-          timeSpentSeconds: r.timeSpentSeconds || 0,
-          status: 'skipped',
-        });
-        continue;
-      }
+    const evaluatedResponses = await Promise.all(
+      (dto.responses || []).map(async (r) => {
+        const qId = String(r.questionId);
+        const q = questionMap.get(qId);
+        if (!q) {
+          return {
+            questionId: String(r.questionId),
+            selectedAnswer: r.selectedAnswer ?? -1,
+            isCorrect: false,
+            marksAwarded: 0,
+            timeSpentSeconds: r.timeSpentSeconds || 0,
+            status: 'skipped',
+            isAttempted: false,
+            partialCredit: false,
+          };
+        }
 
-      const qType = (q.questionType || '').toLowerCase();
-      const optionOrder = this.getQuestionOptionOrderByQuestionId(attempt, q.id);
-      const selectedAnswer = this.mapDisplayedAnswerToCanonical(
-        r.selectedAnswer, optionOrder,
-      ) as number | undefined;
-      const selectedAnswers = this.mapDisplayedAnswerToCanonical(
-        r.selectedAnswers, optionOrder,
-      ) as number[] | undefined;
-      const isCoding =
-        qType === 'coding' || qType === 'algorithmic' || qType === 'dsa';
-      let isAttempted = false;
-      let isCorrect = false;
-      let marksAwarded = 0;
-      let testCasesPassed = 0;
-      let totalTestCases = 0;
+        const qType = (q.questionType || '').toLowerCase();
+        const optionOrder = this.getQuestionOptionOrderByQuestionId(attempt, q.id);
+        const selectedAnswer = this.mapDisplayedAnswerToCanonical(
+          r.selectedAnswer,
+          optionOrder,
+        ) as number | undefined;
+        const selectedAnswers = this.mapDisplayedAnswerToCanonical(
+          r.selectedAnswers,
+          optionOrder,
+        ) as number[] | undefined;
+        const isCoding =
+          qType === 'coding' || qType === 'algorithmic' || qType === 'dsa';
+        let isAttempted = false;
+        let isCorrect = false;
+        let marksAwarded = 0;
+        let testCasesPassed = 0;
+        let totalTestCases = 0;
+        let partialCredit = false;
 
-      if (isCoding) {
-        const hasCode = r.code && r.code.trim().length > 0;
-        if (hasCode) {
-          isAttempted = true;
-          totalAttempted++;
+        if (isCoding) {
+          const hasCode = r.code && r.code.trim().length > 0;
+          if (hasCode) {
+            isAttempted = true;
 
-          const submittedLanguage = canonicalLanguage(r.language || 'python');
-          if (
-            !submittedLanguage ||
-            (q.supportedLanguages?.length &&
-              !q.supportedLanguages.some(
-                (lang) => canonicalLanguage(lang) === submittedLanguage,
-              ))
-          ) {
-            throw new BadRequestException(
-              'This language is not enabled for the assessment question',
-            );
-          }
-          // Server-side code execution against verified test cases (AUD-002)
-          const testCases = codingTestCases(q);
-          totalTestCases = testCases.length;
-
-          if (this.executionService && totalTestCases > 0) {
-            try {
-              const tcInputs = testCases.map((tc, idx) => ({
-                id: tc.id || idx + 1,
-                input: tc.input || '',
-                expected: tc.expected,
-              }));
-              const results = await this.executionService.runCode(
-                r.code!,
-                r.language || 'python',
-                tcInputs,
-                { timeLimit: q.timeLimit, memoryLimit: q.memoryLimit },
+            const submittedLanguage = canonicalLanguage(r.language || 'python');
+            if (
+              !submittedLanguage ||
+              (q.supportedLanguages?.length &&
+                !q.supportedLanguages.some(
+                  (lang) => canonicalLanguage(lang) === submittedLanguage,
+                ))
+            ) {
+              throw new BadRequestException(
+                'This language is not enabled for the assessment question',
               );
-              testCasesPassed = results.filter((res) => res.passed).length;
-            } catch (execErr: any) {
-              this.logger.error({
-                message: `Assessment code execution failed for question ${q.id}`,
-                questionId: q.id,
-                attemptId: attempt?.id,
-                studentId,
-                error: execErr?.message || String(execErr),
-              });
-              if (execErr instanceof PistonUnavailableError) throw execErr;
+            }
+            // Server-side code execution against verified test cases (AUD-002)
+            const testCases = codingTestCases(q);
+            totalTestCases = testCases.length;
+
+            if (this.executionService && totalTestCases > 0) {
+              try {
+                const tcInputs = testCases.map((tc, idx) => ({
+                  id: tc.id || idx + 1,
+                  input: tc.input || '',
+                  expected: tc.expected,
+                }));
+                const results = await this.executionService.runCode(
+                  r.code!,
+                  r.language || 'python',
+                  tcInputs,
+                  { timeLimit: q.timeLimit, memoryLimit: q.memoryLimit },
+                );
+                testCasesPassed = results.filter((res) => res.passed).length;
+              } catch (execErr: any) {
+                this.logger.error({
+                  message: `Assessment code execution failed for question ${q.id}`,
+                  questionId: q.id,
+                  attemptId: attempt?.id,
+                  studentId,
+                  error: execErr?.message || String(execErr),
+                });
+                if (execErr instanceof PistonUnavailableError) throw execErr;
+                testCasesPassed = 0;
+              }
+            } else {
               testCasesPassed = 0;
             }
-          } else {
-            testCasesPassed = 0;
+
+            const ratio =
+              totalTestCases > 0
+                ? Math.min(1, Math.max(0, testCasesPassed / totalTestCases))
+                : 0;
+            marksAwarded = Math.round(ratio * (q.marks || 5) * 10) / 10;
+            isCorrect = ratio >= 0.99;
+            partialCredit = ratio > 0 && !isCorrect;
           }
-
-          const ratio =
-            totalTestCases > 0
-              ? Math.min(1, Math.max(0, testCasesPassed / totalTestCases))
-              : 0;
-          marksAwarded = Math.round(ratio * (q.marks || 5) * 10) / 10;
-          isCorrect = ratio >= 0.99;
-
-          if (isCorrect) totalCorrect++;
-          else if (ratio > 0) totalCorrect++;
-          else totalWrong++;
         } else {
-          totalSkipped++;
+          // MCQ (single choice or multiple choice)
+          const isMulti =
+            qType === 'multiple_choice' ||
+            (Array.isArray(q.correctAnswers) && q.correctAnswers.length > 0);
+
+          if (isMulti) {
+            const selectedList = Array.isArray(selectedAnswers)
+              ? selectedAnswers
+              : selectedAnswer !== undefined && selectedAnswer >= 0
+                ? [selectedAnswer]
+                : [];
+            isAttempted = selectedList.length > 0;
+            if (isAttempted) {
+              const correctList = Array.isArray(q.correctAnswers)
+                ? q.correctAnswers
+                : [q.correctAnswer];
+              const sortedSelected = [...selectedList].sort((a, b) => a - b);
+              const sortedCorrect = [...correctList].sort((a, b) => a - b);
+              isCorrect =
+                sortedSelected.length === sortedCorrect.length &&
+                sortedSelected.every((val, idx) => val === sortedCorrect[idx]);
+
+              if (isCorrect) {
+                marksAwarded = q.marks || 1;
+              } else {
+                const negMarks = assessment.negativeMarking
+                  ? q.negativeMarks || 0
+                  : 0;
+                marksAwarded = negMarks > 0 ? -negMarks : 0;
+              }
+            }
+          } else {
+            // Single-choice MCQ
+            isAttempted = selectedAnswer !== undefined && selectedAnswer >= 0;
+            if (isAttempted) {
+              isCorrect = selectedAnswer === q.correctAnswer;
+              if (isCorrect) {
+                marksAwarded = q.marks || 1;
+              } else {
+                const negMarks = assessment.negativeMarking
+                  ? q.negativeMarks || 0
+                  : 0;
+                marksAwarded = negMarks > 0 ? -negMarks : 0;
+              }
+            }
+          }
+        }
+
+        return {
+          questionId: q.id,
+          selectedAnswer: selectedAnswer ?? -1,
+          selectedAnswers,
+          optionOrder,
+          code: r.code || '',
+          language: r.language || 'python',
+          testCasesPassed,
+          totalTestCases,
+          isCorrect,
+          marksAwarded,
+          timeSpentSeconds: r.timeSpentSeconds || 0,
+          status: isAttempted ? 'answered' : 'skipped',
+          isAttempted,
+          partialCredit,
+        };
+      }),
+    );
+
+    let totalScore = 0;
+    let totalAttempted = 0;
+    let totalCorrect = 0;
+    let totalWrong = 0;
+    let totalSkipped = 0;
+
+    for (const er of evaluatedResponses) {
+      totalScore += er.marksAwarded;
+      if (er.isAttempted) {
+        totalAttempted++;
+        if (er.isCorrect || er.partialCredit) {
+          totalCorrect++;
+        } else {
+          totalWrong++;
         }
       } else {
-        // MCQ (single choice or multiple choice)
-        const isMulti =
-          qType === 'multiple_choice' ||
-          (Array.isArray(q.correctAnswers) && q.correctAnswers.length > 0);
-
-        if (isMulti) {
-          const selectedList = Array.isArray(selectedAnswers)
-            ? selectedAnswers
-            : selectedAnswer !== undefined && selectedAnswer >= 0
-              ? [selectedAnswer]
-              : [];
-          isAttempted = selectedList.length > 0;
-          if (isAttempted) {
-            totalAttempted++;
-            const correctList = Array.isArray(q.correctAnswers)
-              ? q.correctAnswers
-              : [q.correctAnswer];
-            const sortedSelected = [...selectedList].sort((a, b) => a - b);
-            const sortedCorrect = [...correctList].sort((a, b) => a - b);
-            isCorrect =
-              sortedSelected.length === sortedCorrect.length &&
-              sortedSelected.every((val, idx) => val === sortedCorrect[idx]);
-
-            if (isCorrect) {
-              marksAwarded = q.marks || 1;
-              totalCorrect++;
-            } else {
-              const negMarks = assessment.negativeMarking
-                ? q.negativeMarks || 0
-                : 0;
-              marksAwarded = negMarks > 0 ? -negMarks : 0;
-              totalWrong++;
-            }
-          } else {
-            totalSkipped++;
-          }
-        } else {
-          // Single-choice MCQ
-          isAttempted = selectedAnswer !== undefined && selectedAnswer >= 0;
-          if (isAttempted) {
-            totalAttempted++;
-            isCorrect = selectedAnswer === q.correctAnswer;
-            if (isCorrect) {
-              marksAwarded = q.marks || 1;
-              totalCorrect++;
-            } else {
-              const negMarks = assessment.negativeMarking
-                ? q.negativeMarks || 0
-                : 0;
-              marksAwarded = negMarks > 0 ? -negMarks : 0;
-              totalWrong++;
-            }
-          } else {
-            totalSkipped++;
-          }
-        }
+        totalSkipped++;
       }
-
-      totalScore += marksAwarded;
-
-      evaluatedResponses.push({
-        questionId: q.id,
-        selectedAnswer: selectedAnswer ?? -1,
-        selectedAnswers,
-        optionOrder,
-        code: r.code || '',
-        language: r.language || 'python',
-        testCasesPassed,
-        totalTestCases,
-        isCorrect,
-        marksAwarded,
-        timeSpentSeconds: r.timeSpentSeconds || 0,
-        status: isAttempted ? 'answered' : 'skipped',
-      });
     }
 
     const maxScore = assessment.totalMarks || 1;
@@ -2107,6 +2206,22 @@ export class AssessmentsService {
         tabSwitchCount: tabSwitches,
       },
     };
+    } catch (evalErr) {
+      if (attempt.status === 'evaluating') {
+        try {
+          if (typeof this.attemptRepo.update === 'function') {
+            await this.attemptRepo.update(
+              { id: attempt.id, status: 'evaluating' as any },
+              { status: 'in_progress' as any },
+            );
+          }
+          attempt.status = 'in_progress';
+        } catch (revertErr) {
+          this.logger.error('Failed to revert attempt status from evaluating to in_progress', revertErr);
+        }
+      }
+      throw evalErr;
+    }
   }
 
   async getStudentResult(id: string, studentUser: any) {

@@ -1,6 +1,7 @@
 import {
   Controller,
   Get,
+  Post,
   Put,
   Query,
   Param,
@@ -14,6 +15,7 @@ import { AdminGuard } from '../../common/guards/admin.guard';
 import { SuperAdminGuard } from '../../common/guards/super-admin.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UpdateUserRoleDto } from '../dto/update-user-role.dto';
+import { CreateAdminUserDto } from '../dto/create-admin-user.dto';
 
 @ApiTags('Admin - Users')
 @ApiBearerAuth()
@@ -21,6 +23,17 @@ import { UpdateUserRoleDto } from '../dto/update-user-role.dto';
 @Controller('admin/users')
 export class AdminUsersController {
   constructor(private readonly adminService: AdminService) {}
+
+  @Post()
+  @UseGuards(SuperAdminGuard)
+  @ApiOperation({ summary: 'Create a new admin user (super_admin only)' })
+  async createAdmin(
+    @Body() body: CreateAdminUserDto,
+    @CurrentUser() currentUser: any,
+  ) {
+    const user = await this.adminService.createAdminUser(body, currentUser);
+    return { success: true, user };
+  }
 
   @Get()
   @ApiOperation({ summary: 'List all users with pagination and search' })

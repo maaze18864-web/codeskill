@@ -42,6 +42,7 @@ import { CodeSnippet } from "@/components/assessment/CodeSnippet";
 import {
   checkAssessmentFace,
   getAssessmentFaceReference,
+  clearAssessmentFaceReference,
   type AssessmentFaceCheck,
 } from "@/lib/assessment-face-verification";
 
@@ -74,7 +75,6 @@ interface Question {
   timeLimit?: number;
   memoryLimit?: number;
   testCases?: TestCase[];
-  examples?: { input?: string; output?: string; explanation?: string }[];
 }
 
 interface AssessmentProctoring {
@@ -113,6 +113,7 @@ export default function TakeAssessmentPage({
       string,
       {
         selectedAnswer: number;
+        selectedAnswers?: number[];
         code?: string;
         language?: string;
         testCasesPassed?: number;
@@ -124,6 +125,7 @@ export default function TakeAssessmentPage({
   const [durationMinutes, setDurationMinutes] = useState(45);
   const [startedAt, setStartedAt] = useState<Date>(new Date());
   const [timeLeftSeconds, setTimeLeftSeconds] = useState(2700);
+  const [attemptDeadlineAt, setAttemptDeadlineAt] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingSettings, setIsLoadingSettings] = useState(true);
   const [proctoring, setProctoring] = useState<AssessmentProctoring | null>(null);
@@ -133,7 +135,6 @@ export default function TakeAssessmentPage({
   const submissionRequestedRef = useRef(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isAutoSubmitting, setIsAutoSubmitting] = useState(false);
-  const [snapshotStatus, setSnapshotStatus] = useState("First snapshot is captured after 20 seconds; S3 storage is confirmed per capture");
   const [assessmentTitle, setAssessmentTitle] = useState("Proctored Assessment");
   const [assessmentCode, setAssessmentCode] = useState("");
   const [startError, setStartError] = useState<string | null>(null);
@@ -263,6 +264,7 @@ export default function TakeAssessmentPage({
         return {
           questionId: q._id,
           selectedAnswer: r ? r.selectedAnswer : -1,
+          selectedAnswers: r?.selectedAnswers ?? (r && r.selectedAnswer >= 0 ? [r.selectedAnswer] : []),
           code: r?.code || "",
           language: r?.language || "python",
           testCasesPassed: r?.testCasesPassed || 0,
@@ -305,9 +307,11 @@ export default function TakeAssessmentPage({
       const start = new Date(data.startedAt || new Date());
       setStartedAt(start);
 
-      const totalSecs = (data.durationMinutes || 45) * 60;
-      const elapsedSecs = Math.floor((Date.now() - start.getTime()) / 1000);
-      setTimeLeftSeconds(Math.max(0, totalSecs - elapsedSecs));
+      const deadline = data.attemptExpiresAt
+        ? new Date(data.attemptExpiresAt).getTime()
+        : start.getTime() + (data.durationMinutes || 45) * 60_000;
+      setAttemptDeadlineAt(deadline);
+      setTimeLeftSeconds(Math.max(0, Math.ceil((deadline - Date.now()) / 1000)));
 
       if (data.proctoring?.maxTabSwitches) {
         setMaxTabSwitches(data.proctoring.maxTabSwitches);
@@ -317,6 +321,7 @@ export default function TakeAssessmentPage({
         string,
         {
           selectedAnswer: number;
+          selectedAnswers?: number[];
           code?: string;
           language?: string;
           testCasesPassed?: number;
@@ -326,15 +331,21 @@ export default function TakeAssessmentPage({
       > = {};
       (data.savedResponses || []).forEach((r: any) => {
         if (r.questionId) {
+          const hasMulti = Array.isArray(r.selectedAnswers) && r.selectedAnswers.length > 0;
           initialResponses[r.questionId.toString()] = {
             selectedAnswer: r.selectedAnswer ?? -1,
+            selectedAnswers: Array.isArray(r.selectedAnswers)
+              ? r.selectedAnswers
+              : r.selectedAnswer >= 0
+                ? [r.selectedAnswer]
+                : [],
             code: r.code || "",
             language: r.language || "python",
             testCasesPassed: r.testCasesPassed || 0,
             totalTestCases: r.totalTestCases || 0,
             status:
               r.status ||
-              (r.selectedAnswer >= 0 || (r.code && r.code.trim().length > 0)
+              (hasMulti || r.selectedAnswer >= 0 || (r.code && r.code.trim().length > 0)
                 ? "answered"
                 : "unvisited"),
           };
@@ -383,6 +394,7 @@ export default function TakeAssessmentPage({
         return {
           questionId: q._id,
           selectedAnswer: r ? r.selectedAnswer : -1,
+          selectedAnswers: r?.selectedAnswers ?? (r && r.selectedAnswer >= 0 ? [r.selectedAnswer] : []),
           code: r?.code || "",
           language: r?.language || "python",
           testCasesPassed: r?.testCasesPassed || 0,
@@ -409,9 +421,11 @@ export default function TakeAssessmentPage({
           } catch (error: any) {
             lastError = error;
             const status = error?.response?.status;
-            const transient = !status || status === 429 || status >= 500;
+            // 409 Conflict indicates the submission is actively evaluating. Treat as transient with backoff retry!
+            const transient = !status || status === 409 || status === 429 || status >= 500;
             if (!transient || retry === 2) break;
-            await new Promise((resolve) => window.setTimeout(resolve, 750 * (retry + 1)));
+            const delay = status === 409 ? 1500 * (retry + 1) : 750 * (retry + 1);
+            await new Promise((resolve) => window.setTimeout(resolve, delay));
           }
         }
         if (lastError) throw lastError;
@@ -426,6 +440,7 @@ export default function TakeAssessmentPage({
       // Release a preflight stream that was handed off but not adopted by the
       // exam media hook (for example, after a quick route transition).
       releaseAssessmentStream(id);
+      clearAssessmentFaceReference(id);
       if (isAuto) {
         await new Promise((resolve) => window.setTimeout(resolve, 2500));
       }
@@ -585,9 +600,6 @@ export default function TakeAssessmentPage({
               throw new Error("The server did not confirm that this snapshot was saved to S3");
             }
             saved = true;
-            if (!cancelled) {
-              setSnapshotStatus(`Saved to S3 · ${new Date(result.timestamp || timestamp).toLocaleTimeString()} · ${result.objectKey}`);
-            }
             break;
           } catch (error) {
             lastError = error;
@@ -596,15 +608,9 @@ export default function TakeAssessmentPage({
             }
           }
         }
-        if (!saved && !cancelled) {
-          const serverMessage = (lastError as { response?: { data?: { message?: string | string[] } }; message?: string })?.response?.data?.message;
-          const message = Array.isArray(serverMessage) ? serverMessage.join(", ") : serverMessage;
-          const fallback = (lastError as { message?: string })?.message;
-          setSnapshotStatus(`S3 save failed · ${message || fallback || "Upload failed after 3 attempts"}`);
-        }
+        if (!saved && !cancelled) console.warn("Assessment snapshot upload failed after retries:", lastError);
       } catch (error) {
         console.warn("Assessment page snapshot could not be uploaded:", error);
-        if (!cancelled) setSnapshotStatus(`Snapshot capture failed · ${(error as { message?: string })?.message || "capture unavailable"}`);
       }
       if (!cancelled) timer = window.setTimeout(() => void capture(), 20_000);
     };
@@ -616,27 +622,20 @@ export default function TakeAssessmentPage({
     };
   }, [id, isLoading, isSubmitting, loadedAssessmentId]);
 
-  // 4. Countdown Clock
+  // 4. Countdown Clock: derive from the server deadline so a sleeping tab cannot pause the exam.
   useEffect(() => {
-    if (isLoading || isSubmitting) return;
-    if (timeLeftSeconds <= 0) {
-      void submitExam(true);
-      return;
-    }
-
-    const timer = setInterval(() => {
-      setTimeLeftSeconds((prev) => {
-        if (prev <= 1) {
-          clearInterval(timer);
-          submitExam(true);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-
+    if (isLoading || isSubmitting || attemptDeadlineAt === null) return;
+    const updateClock = () => setTimeLeftSeconds(Math.max(0, Math.ceil((attemptDeadlineAt - Date.now()) / 1000)));
+    updateClock();
+    const timer = setInterval(updateClock, 1000);
     return () => clearInterval(timer);
-  }, [isLoading, isSubmitting, submitExam, timeLeftSeconds]);
+  }, [attemptDeadlineAt, isLoading, isSubmitting]);
+
+  useEffect(() => {
+    if (!isLoading && !isSubmitting && loadedAssessmentId === id && timeLeftSeconds <= 0) {
+      void submitExam(true);
+    }
+  }, [id, isLoading, isSubmitting, loadedAssessmentId, submitExam, timeLeftSeconds]);
 
   // 5. Autosave Progress Interval (Every 15 Seconds)
   useEffect(() => {
@@ -648,6 +647,7 @@ export default function TakeAssessmentPage({
         return {
           questionId: q._id,
           selectedAnswer: r ? r.selectedAnswer : -1,
+          selectedAnswers: r?.selectedAnswers ?? (r && r.selectedAnswer >= 0 ? [r.selectedAnswer] : []),
           code: r?.code || "",
           language: r?.language || "python",
           testCasesPassed: r?.testCasesPassed || 0,
@@ -695,38 +695,82 @@ export default function TakeAssessmentPage({
 
   // Question Interaction Handlers
   const currentQ = questions[currentIndex];
+  const isMultiChoice = Boolean(
+    currentQ && (
+      currentQ.questionType?.toLowerCase() === "multiple_choice" ||
+      currentQ.questionType?.toLowerCase() === "multiple"
+    )
+  );
   const currentResponse = currentQ ? responses[currentQ._id] : null;
   const selectedAnswer = currentResponse ? currentResponse.selectedAnswer : -1;
+  const selectedAnswers = currentResponse?.selectedAnswers ?? (selectedAnswer >= 0 ? [selectedAnswer] : []);
 
   const handleSelectOption = (optionIndex: number) => {
     if (!currentQ) return;
-    setResponses((prev) => ({
-      ...prev,
-      [currentQ._id]: {
-        selectedAnswer: optionIndex,
-        status: prev[currentQ._id]?.status === "marked_for_review" ? "marked_for_review" : "answered",
-      },
-    }));
+    if (isMultiChoice) {
+      const prevAnswers = responsesRef.current[currentQ._id]?.selectedAnswers ?? (
+        responsesRef.current[currentQ._id]?.selectedAnswer !== undefined && responsesRef.current[currentQ._id]?.selectedAnswer >= 0
+          ? [responsesRef.current[currentQ._id]!.selectedAnswer]
+          : []
+      );
+      const nextAnswers = prevAnswers.includes(optionIndex)
+        ? prevAnswers.filter((idx) => idx !== optionIndex)
+        : [...prevAnswers, optionIndex].sort((a, b) => a - b);
+      const hasSelections = nextAnswers.length > 0;
+      const next = {
+        ...responsesRef.current,
+        [currentQ._id]: {
+          ...responsesRef.current[currentQ._id],
+          selectedAnswer: nextAnswers[0] ?? -1,
+          selectedAnswers: nextAnswers,
+          status: responsesRef.current[currentQ._id]?.status === "marked_for_review"
+            ? "marked_for_review"
+            : hasSelections
+              ? "answered"
+              : "skipped",
+        },
+      };
+      responsesRef.current = next;
+      setResponses(next);
+    } else {
+      const next = {
+        ...responsesRef.current,
+        [currentQ._id]: {
+          ...responsesRef.current[currentQ._id],
+          selectedAnswer: optionIndex,
+          selectedAnswers: [optionIndex],
+          status: responsesRef.current[currentQ._id]?.status === "marked_for_review" ? "marked_for_review" : "answered",
+        },
+      };
+      responsesRef.current = next;
+      setResponses(next);
+    }
   };
 
   const handleClearSelection = () => {
     if (!currentQ) return;
-    setResponses((prev) => ({
-      ...prev,
+    const next = {
+      ...responsesRef.current,
       [currentQ._id]: {
+        ...responsesRef.current[currentQ._id],
         selectedAnswer: -1,
-        status: prev[currentQ._id]?.status === "marked_for_review" ? "marked_for_review" : "skipped",
+        selectedAnswers: [],
+        status: responsesRef.current[currentQ._id]?.status === "marked_for_review" ? "marked_for_review" : "skipped",
       },
-    }));
+    };
+    responsesRef.current = next;
+    setResponses(next);
   };
 
   const handleMarkForReview = () => {
     if (!currentQ) return;
     const previous = responsesRef.current[currentQ._id];
     const removing = previous?.status === "marked_for_review";
-    const hasAnswer = (previous?.selectedAnswer ?? -1) >= 0 || Boolean(previous?.code?.trim());
+    const hasAnswer = (previous?.selectedAnswers && previous.selectedAnswers.length > 0) || (previous?.selectedAnswer ?? -1) >= 0 || Boolean(previous?.code?.trim());
     const next = { ...responsesRef.current, [currentQ._id]: {
-      ...previous, selectedAnswer: previous?.selectedAnswer ?? -1,
+      ...previous,
+      selectedAnswer: previous?.selectedAnswer ?? -1,
+      selectedAnswers: previous?.selectedAnswers,
       status: removing ? (hasAnswer ? "answered" : "skipped") : "marked_for_review",
     } };
     responsesRef.current = next;
@@ -760,6 +804,7 @@ export default function TakeAssessmentPage({
       ...responsesRef.current,
       [currentQ._id]: {
         selectedAnswer: -1,
+        selectedAnswers: [] as number[],
         code,
         language,
         testCasesPassed,
@@ -776,6 +821,7 @@ export default function TakeAssessmentPage({
       return {
         questionId: q._id,
         selectedAnswer: r ? r.selectedAnswer : -1,
+        selectedAnswers: r?.selectedAnswers ?? (r && r.selectedAnswer >= 0 ? [r.selectedAnswer] : []),
         code: r?.code || "",
         language: r?.language || "python",
         testCasesPassed: r?.testCasesPassed || 0,
@@ -828,7 +874,7 @@ export default function TakeAssessmentPage({
   const answeredCount = Object.values(responses).filter(
     (r) =>
       r.status === "answered" &&
-      (r.selectedAnswer >= 0 || (r.code && r.code.trim().length > 0))
+      ((r.selectedAnswers && r.selectedAnswers.length > 0) || r.selectedAnswer >= 0 || (r.code && r.code.trim().length > 0))
   ).length;
   const reviewCount = Object.values(responses).filter(
     (r) => r.status === "marked_for_review"
@@ -1062,7 +1108,7 @@ export default function TakeAssessmentPage({
           <nav aria-label="Assessment questions" className="assessment-scroll flex-1 min-h-0 overflow-y-auto overscroll-contain p-2 space-y-1">
             {questions.map((q, index) => {
               const response = responses[q._id];
-              const answered = response?.status === "answered" && (response.selectedAnswer >= 0 || Boolean(response.code?.trim()));
+              const answered = response?.status === "answered" && (((response.selectedAnswers && response.selectedAnswers.length > 0) || response.selectedAnswer >= 0) || Boolean(response.code?.trim()));
               const review = response?.status === "marked_for_review";
               const current = index === currentIndex;
               const coding = ["coding", "algorithmic", "dsa"].includes(q.questionType?.toLowerCase()) || (!q.options?.length && Boolean(q.starterCode || q.codeSnippet));
@@ -1130,11 +1176,22 @@ export default function TakeAssessmentPage({
                 </section>
                 <section aria-label="Answer options" tabIndex={0} className="assessment-scroll flex-1 min-h-0 min-w-0 overflow-y-auto overscroll-contain p-5 space-y-5">
                   <div style={{ zoom: readingScale }} className="space-y-5">
-                  <h2 className="text-sm font-semibold">Choose your answer</h2>
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-sm font-semibold">
+                      {isMultiChoice ? "Choose all that apply" : "Choose your answer"}
+                    </h2>
+                    {isMultiChoice && (
+                      <span className="text-[11px] font-medium text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
+                        Multiple Choice
+                      </span>
+                    )}
+                  </div>
                   {/* Options Selection (4 Cards) */}
                   <div className="space-y-3 pt-2">
                     {(currentQ.options ?? []).map((optionText, optIndex) => {
-                      const isSelected = selectedAnswer === optIndex;
+                      const isSelected = isMultiChoice
+                        ? selectedAnswers.includes(optIndex)
+                        : selectedAnswer === optIndex;
                       const letter = String.fromCharCode(65 + optIndex); // A, B, C, D
 
                       return (
@@ -1149,15 +1206,21 @@ export default function TakeAssessmentPage({
                               : "border-border bg-card hover:bg-muted/40 hover:border-muted-foreground/30"
                           }`}
                         >
-                          {/* Option Radio Letter Pill */}
+                          {/* Option Indicator: square checkbox style for multi-choice, rounded pill for single-choice */}
                           <div
-                            className={`w-7 h-7 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 transition-colors ${
+                            className={`w-7 h-7 flex items-center justify-center font-bold text-xs shrink-0 transition-colors ${
+                              isMultiChoice ? "rounded-lg" : "rounded-xl"
+                            } ${
                               isSelected
                                 ? "bg-emerald-500 text-slate-950 shadow-sm ring-2 ring-emerald-300/50"
                                 : "bg-muted text-muted-foreground border border-border group-hover:border-primary/50 group-hover:text-foreground"
                             }`}
                           >
-                            {letter}
+                            {isSelected && isMultiChoice ? (
+                              <Check className="w-4 h-4 stroke-[3]" />
+                            ) : (
+                              letter
+                            )}
                           </div>
 
                           <div className="flex-1 text-[15px] sm:text-base font-medium text-foreground pt-0.5 leading-7">
@@ -1186,7 +1249,7 @@ export default function TakeAssessmentPage({
                     <button
                       type="button"
                       onClick={handleClearSelection}
-                      disabled={selectedAnswer < 0}
+                      disabled={isMultiChoice ? selectedAnswers.length === 0 : selectedAnswer < 0}
                       className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-border hover:bg-muted text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                       title="Clear current answer choice"
                     >
@@ -1258,11 +1321,10 @@ export default function TakeAssessmentPage({
               <span className="min-w-0 truncate">Face check: {faceMonitorStatus}</span>
               <span className="shrink-0 font-semibold">{faceWarningCount}/5 warnings</span>
             </div>
-            <p className="text-[10px] leading-relaxed text-muted-foreground">Exam snapshots: {snapshotStatus}</p>
 
             <div role="status" className={`rounded-lg border px-2 py-1.5 text-xs ${faceWarningCount > 0 ? "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-300" : "border-border bg-muted/30 text-muted-foreground"}`}>
               <div className="flex items-center justify-between gap-2 font-semibold">
-                <span>Multiple-face warnings</span>
+                <span>Face verification warnings</span>
                 <span className="font-mono">{faceWarningCount} / {MAX_FACE_WARNINGS}</span>
               </div>
               <p className="mt-1 text-[10px] leading-relaxed">Warning 5 ends and submits your test.</p>

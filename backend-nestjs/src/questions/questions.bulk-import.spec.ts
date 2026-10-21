@@ -222,6 +222,33 @@ describe('Questions Bulk Import & Merge Strategy', () => {
     expect(preview.validRows[0].referenceSolutions).toHaveLength(3);
   });
 
+  it('accepts coding CSVs with Excel-width empty trailing columns and blank rows', async () => {
+    const template = readFileSync(join(process.cwd(), '..', 'frontend-v2', 'public', 'templates',
+      'chandigarh_university_coding_questions_template.csv'));
+    const workbook = xlsx.read(template, { type: 'buffer' });
+    const rows = xlsx.utils.sheet_to_json<string[]>(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
+    const csv = [...rows, ...Array.from({ length: 12 }, () => [] as string[])].map(row =>
+      Array.from({ length: 16384 }, (_, index) => `"${String(row[index] ?? '').replace(/"/g, '""')}"`).join(','),
+    ).join('\n');
+    const preview = await service.parseAndValidateQuestionsImport(Buffer.from(csv));
+    expect(preview.errors).toEqual([]);
+    expect(preview.summary.validCount).toBe(1);
+    expect(preview.validRows[0].examples).toHaveLength(2);
+    expect(preview.validRows[0].testCases).toHaveLength(2);
+    expect(preview.validRows[0].referenceSolutions).toHaveLength(3);
+  });
+
+  it('updates execution limits together with imported coding content', async () => {
+    const existing = { id: 'existing', question: 'Limits', topic: 'Arrays', timeLimit: 1000, memoryLimit: 128 };
+    questionRepo.findOne.mockResolvedValue(existing);
+    await service.confirmQuestionsImport([{
+      question: 'Limits', topic: 'Arrays', questionType: 'coding',
+      existingQuestionId: existing.id, timeLimit: 4500, memoryLimit: 512,
+      testCases: [{ input: '1', output: '1', isHidden: false }],
+    }], admin, '', '', 'update');
+    expect(existing).toMatchObject({ timeLimit: 4500, memoryLimit: 512 });
+  });
+
 
   it('normalizes whitespace, case, and punctuation to detect exact duplicates via content hash', () => {
     const text1 = 'What is the   time complexity of QuickSort?';

@@ -9,6 +9,7 @@ import {
   ValidateIf,
   ValidateNested,
   Allow,
+  IsObject,
 } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
@@ -307,6 +308,7 @@ export class CreateQuestionDto {
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => QuestionExampleDto)
+  @IsObject({ each: true })
   examples?: QuestionExampleDto[];
 
   @ApiPropertyOptional()
@@ -324,6 +326,7 @@ export class CreateQuestionDto {
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => StarterCodeDto)
+  @IsObject({ each: true })
   starterCode?: StarterCodeDto[];
 
   @ApiPropertyOptional()
@@ -352,6 +355,7 @@ export class CreateQuestionDto {
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => QuestionTestCaseDto)
+  @IsObject({ each: true })
   testCases?: QuestionTestCaseDto[];
 
   @ApiPropertyOptional()
@@ -359,6 +363,7 @@ export class CreateQuestionDto {
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => ReferenceSolutionDto)
+  @IsObject({ each: true })
   referenceSolutions?: ReferenceSolutionDto[];
 
   @ApiPropertyOptional()

@@ -71,13 +71,13 @@ variable "db_instance_class" {
 
 # Image tags for immutable deployments
 variable "frontend_image_tag" {
-  description = "Docker image tag for frontend container"
+  description = "Docker image tag or immutable commit SHA for frontend container"
   type        = string
   default     = "latest"
 }
 
 variable "backend_image_tag" {
-  description = "Docker image tag for backend container"
+  description = "Docker image tag or immutable commit SHA for backend container"
   type        = string
   default     = "latest"
 }
@@ -110,13 +110,13 @@ variable "backend_instance_type" {
 variable "piston_instance_type" {
   description = "EC2 instance type for Piston execution engine (compute/RAM for concurrent sandbox runs)"
   type        = string
-  default     = "t3.large"
+  default     = "t3.small"
 }
 
 variable "judge0_instance_type" {
   description = "EC2 instance type for Judge0 execution engine"
   type        = string
-  default     = "t3.medium"
+  default     = "t3.small"
 }
 
 variable "backend_env_parameter_name" {

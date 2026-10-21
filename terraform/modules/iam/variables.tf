@@ -19,7 +19,19 @@ variable "enable_s3" {
 variable "secrets_arn_prefix" {
   description = "ARN prefix for Secrets Manager secrets accessible by application"
   type        = string
-  default     = "*"
+  default     = ""
+}
+
+variable "db_secret_arn" {
+  description = "ARN of the RDS database secret in AWS Secrets Manager"
+  type        = string
+  default     = ""
+}
+
+variable "ssm_parameter_arns" {
+  description = "List of specific SSM parameter ARNs accessible by backend application instances"
+  type        = list(string)
+  default     = []
 }
 
 variable "tags" {

@@ -227,7 +227,7 @@ export class SubmissionsService {
     const contest = await this.contestRepo.findOne({ where: { id: contestId, isPublished: true } });
     if (!contest || !contest.participants?.includes(userId))
       throw new ForbiddenException('Register for this contest first');
-    if (contest.format === 'mcq' || !contest.problems?.includes(problemId))
+    if (contest.contestFormat === 'mcq' || !contest.problems?.includes(problemId))
       throw new ForbiddenException('This coding problem is not selected for the contest');
     const attempt = await this.contestAttemptRepo.findOne({
       where: { contest_id: contest.id, user_id: userId, status: 'InProgress' },

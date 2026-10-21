@@ -159,6 +159,25 @@ describe('Students Bulk Import & Validation', () => {
     expect(result.validRows[0].semester).toBe(6);
   });
 
+  it('accepts ordinal semester values from university spreadsheets', async () => {
+    const buffer = createWorkbookBuffer([{
+      'Roll No': 2416438,
+      Name: 'Aadarshdeep Singh',
+      'Email Id': '2416438.cse.coe@cgc.edu.in',
+      Branch: 'CSE',
+      Sem: '5th',
+    }]);
+
+    const result = await service.parseAndValidateImport(buffer, {
+      defaultBatch: 'AY 2026-2027 ODD',
+      defaultYear: 2027,
+    });
+
+    expect(result.valid).toBe(1);
+    expect(result.validRows[0].semester).toBe(5);
+    expect(result.validRows[0].uid).toBe('2416438');
+  });
+
   it('re-uploading the same file performs idempotent processing and does not fail', async () => {
     // Simulate database returning existing records for confirm check
     userRepo.find.mockResolvedValue([
@@ -228,5 +247,38 @@ describe('Students Bulk Import & Validation', () => {
     expect(result.generatedPassword).toBeDefined();
     expect(result.generatedPassword).not.toBe('12345678');
     expect(result.generatedPassword.length).toBeGreaterThanOrEqual(12);
+  });
+
+  it('rejects batch import exceeding 500 rows to prevent threadpool starvation (ISSUE-PRF-002)', async () => {
+    const hugeBatch = Array.from({ length: 501 }, (_, i) => ({
+      uid: `UID_${i}`,
+      name: `Student ${i}`,
+      email: `student${i}@test.com`,
+    }));
+
+    await expect(service.confirmImport(hugeBatch, admin)).rejects.toThrow(
+      'exceeds maximum allowed limit of 500',
+    );
+  });
+
+  it('sanitizes malicious prototype pollution keys in spreadsheets (ISSUE-SEC-005)', async () => {
+    const maliciousRow = {
+      uid: 'CU_SEC_1',
+      name: 'Security Test',
+      email: 'sec@test.com',
+      batch: '2022-2026',
+      year: 2026,
+      semester: 6,
+      __proto__: { polluted: true },
+      constructor: { prototype: { admin: true } },
+    };
+
+    const buffer = createWorkbookBuffer([maliciousRow]);
+    const result = await service.parseAndValidateImport(buffer);
+
+    expect(result.valid).toBe(1);
+    expect((Object.prototype as any).polluted).toBeUndefined();
+    expect((Object.prototype as any).admin).toBeUndefined();
+    expect(result.validRows[0].__proto__).not.toEqual({ polluted: true });
   });
 });

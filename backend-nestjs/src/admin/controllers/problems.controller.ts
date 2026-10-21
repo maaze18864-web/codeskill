@@ -20,7 +20,7 @@ import { AdminService } from '../admin.service';
 @UseGuards(JwtAuthGuard, AdminGuard)
 @Controller('admin/problems')
 export class AdminProblemsController {
-  constructor(private readonly adminService: AdminService) {}
+  constructor(private readonly adminService: AdminService) { }
 
   @Get()
   @ApiOperation({ summary: 'List all problems' })
@@ -28,11 +28,13 @@ export class AdminProblemsController {
     @Query('page') page: string,
     @Query('limit') limit: string,
     @Query('search') search: string,
+    @Query('contestEligible') contestEligible: string,
   ) {
     return this.adminService.getProblems(
       parseInt(page, 10) || 1,
       parseInt(limit, 10) || 20,
       search,
+      contestEligible === 'true',
     );
   }
 

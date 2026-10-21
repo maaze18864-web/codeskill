@@ -48,11 +48,11 @@ export class ContestsService {
     private readonly problemsService: ProblemsService,
     @Optional() private readonly submissions?: SubmissionStore,
     @Optional()
-    @InjectRepository(Question)
-    private readonly questionRepo?: Repository<Question>,
-    @Optional()
     @InjectRepository(ContestReattemptGrant)
     private readonly reattemptGrantRepo?: Repository<ContestReattemptGrant>,
+    @Optional()
+    @InjectRepository(Question)
+    private readonly questionRepo?: Repository<Question>,
   ) {}
 
   async getContests() {
@@ -116,7 +116,8 @@ export class ContestsService {
       startTime: contest.startTime,
       endTime: contest.endTime,
       problems: contest.problems || [],
-      format: contest.format || 'coding',
+      format: contest.contestFormat || 'coding',
+      contestFormat: contest.contestFormat || 'coding',
       isPrivate: contest.isPrivate,
     };
   }
@@ -193,7 +194,7 @@ export class ContestsService {
         id,
       ),
     );
-    if (contest.format === 'mcq' || contest.format === 'mixed') {
+    if (contest.contestFormat === 'mcq' || contest.contestFormat === 'mixed') {
       const rows: Array<{ name: string; username: string; solved: number; score: number }> =
         await this.attemptRepo.query(
           `SELECT u.name, u.username,
@@ -391,7 +392,7 @@ export class ContestsService {
           throw new BadRequestException('A selected question is no longer eligible for this contest');
         const type = contestQuestionType(question);
         if (type === 'mcq') {
-          if (contest.format === 'coding')
+          if (contest.contestFormat === 'coding')
             throw new BadRequestException('MCQ questions are not valid for this contest format');
           return {
             id: question.id,
@@ -404,9 +405,9 @@ export class ContestsService {
             negativeMarks: question.negativeMarks,
           };
         }
-        if (contest.format === 'mcq')
+        if (contest.contestFormat === 'mcq')
           throw new BadRequestException('Coding questions are not valid for this contest format');
-      } else if (contest.format === 'mcq') {
+      } else if (contest.contestFormat === 'mcq') {
         throw new BadRequestException('A selected question is no longer eligible for this contest');
       }
       const problem = await this.problemsService.getExecutionProblem(problemId);
@@ -437,43 +438,91 @@ export class ContestsService {
 
     if (attempt.status !== 'InProgress') {
       // Completed or ended attempt. Check if student has active reattempt grant.
-      const grant = this.reattemptGrantRepo
-        ? await this.reattemptGrantRepo.findOne({
-            where: { contest_id: contest.id, user_id: userId, status: 'ACTIVE' },
-          })
-        : null;
-
-      const isValid =
-        grant &&
-        (!grant.expiresAt || new Date() < new Date(grant.expiresAt)) &&
-        grant.usedAttempts < grant.allowedAttempts;
-
-      if (!isValid) {
+      if (!this.reattemptGrantRepo) {
         throw new BadRequestException('Your contest attempt has ended');
       }
 
-      // Consume one attempt from the authorized grant
-      grant.usedAttempts += 1;
-      if (grant.usedAttempts >= grant.allowedAttempts) {
-        grant.status = 'USED';
-      }
-      await this.reattemptGrantRepo?.save(grant);
+      // Execute grant consumption and attempt creation inside an atomic transaction with pessimistic locking (ISSUE-CON-001)
+      const currentAttempt = attempt;
+      if (typeof this.reattemptGrantRepo.manager?.transaction === 'function') {
+        attempt = await this.reattemptGrantRepo.manager.transaction(
+          async (manager) => {
+            const grant = await manager.findOne(ContestReattemptGrant, {
+              where: {
+                contest_id: contest.id,
+                user_id: userId,
+                status: 'ACTIVE',
+              },
+              lock: { mode: 'pessimistic_write' },
+            });
 
-      // Create new reattempt
-      const nextAttemptNumber = (attempt.attemptNumber || 1) + 1;
-      const newAttempt = this.attemptRepo.create({
-        contest_id: contest.id,
-        user_id: userId,
-        sessionId: randomUUID(),
-        attemptNumber: nextAttemptNumber,
-        status: 'InProgress',
-        startedAt: new Date(),
-        warnings: 0,
-        violations: [],
-        score: 0,
-        problemsSolved: 0,
-      });
-      attempt = await this.attemptRepo.save(newAttempt);
+            const isValid =
+              grant &&
+              (!grant.expiresAt || new Date() < new Date(grant.expiresAt)) &&
+              grant.usedAttempts < grant.allowedAttempts;
+
+            if (!isValid) {
+              throw new BadRequestException('Your contest attempt has ended');
+            }
+
+            grant.usedAttempts += 1;
+            if (grant.usedAttempts >= grant.allowedAttempts) {
+              grant.status = 'USED';
+            }
+            await manager.save(ContestReattemptGrant, grant);
+
+            const nextAttemptNumber =
+              (currentAttempt.attemptNumber || 1) + 1;
+            const newAttempt = manager.create(ContestAttempt, {
+              contest_id: contest.id,
+              user_id: userId,
+              sessionId: randomUUID(),
+              attemptNumber: nextAttemptNumber,
+              status: 'InProgress',
+              startedAt: new Date(),
+              warnings: 0,
+              violations: [],
+              score: 0,
+              problemsSolved: 0,
+            });
+            return manager.save(ContestAttempt, newAttempt);
+          },
+        );
+      } else {
+        const grant = await this.reattemptGrantRepo.findOne({
+          where: { contest_id: contest.id, user_id: userId, status: 'ACTIVE' },
+        });
+
+        const isValid =
+          grant &&
+          (!grant.expiresAt || new Date() < new Date(grant.expiresAt)) &&
+          grant.usedAttempts < grant.allowedAttempts;
+
+        if (!isValid) {
+          throw new BadRequestException('Your contest attempt has ended');
+        }
+
+        grant.usedAttempts += 1;
+        if (grant.usedAttempts >= grant.allowedAttempts) {
+          grant.status = 'USED';
+        }
+        await this.reattemptGrantRepo.save(grant);
+
+        const nextAttemptNumber = (currentAttempt.attemptNumber || 1) + 1;
+        const newAttempt = this.attemptRepo.create({
+          contest_id: contest.id,
+          user_id: userId,
+          sessionId: randomUUID(),
+          attemptNumber: nextAttemptNumber,
+          status: 'InProgress',
+          startedAt: new Date(),
+          warnings: 0,
+          violations: [],
+          score: 0,
+          problemsSolved: 0,
+        });
+        attempt = await this.attemptRepo.save(newAttempt);
+      }
     }
 
     this.logger.log({

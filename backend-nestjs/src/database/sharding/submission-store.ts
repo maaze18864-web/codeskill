@@ -8,6 +8,7 @@ import {
   FindOptionsWhere,
   FindOptionsOrderValue,
   In,
+  LessThan,
   Repository,
 } from 'typeorm';
 import { Submission } from '../entities/submission.entity';
@@ -108,10 +109,14 @@ export class SubmissionStore {
     for (const row of rows) row.user = indexed.get(row.userId)!;
   }
 
-  async find(options: FindManyOptions<Submission> = {}): Promise<Submission[]> {
+  async find(
+    options: FindManyOptions<Submission> & {
+      cursor?: { createdAt: Date | string; id: string };
+    } = {},
+  ): Promise<Submission[]> {
     if (!this.isSharded) return this.primary.find(options);
     const repos = this.repositories(options.where);
-    const { relations, skip = 0, take, order, ...rest } = options;
+    const { relations, skip = 0, take, order, cursor, ...rest } = options;
     if (
       relations &&
       (Array.isArray(relations)
@@ -133,26 +138,40 @@ export class SubmissionStore {
     if (
       !take ||
       take < 1 ||
-      skip + take > 10000 ||
+      skip + take > 2000 ||
       Object.keys(order || {}).some((key) => !['createdAt', 'id'].includes(key))
     ) {
       throw new Error(
-        'Cross-shard submission reads require bounded pagination ordered by createdAt',
+        'Cross-shard submission reads require bounded pagination ordered by createdAt (max offset 2000)',
       );
     }
     const createdAtDirection = direction(order?.createdAt, 'DESC');
     const idDirection = direction(order?.id, 'ASC');
+    const fetchLimit = cursor ? take : skip + take;
+
     const results = await Promise.all(
-      repos.map((repo) =>
-        repo.find({
+      repos.map((repo) => {
+        let whereCondition = rest.where;
+        if (cursor) {
+          const cursorDate = new Date(cursor.createdAt);
+          const baseWhere = (
+            Array.isArray(rest.where) ? rest.where : [rest.where || {}]
+          ) as any[];
+          whereCondition = baseWhere.flatMap((w) => [
+            { ...w, createdAt: LessThan(cursorDate) },
+            { ...w, createdAt: cursorDate, id: LessThan(cursor.id) },
+          ]);
+        }
+        return repo.find({
           ...rest,
-          take: skip + take,
+          where: whereCondition,
+          take: fetchLimit,
           order: {
             createdAt: createdAtDirection,
             id: idDirection,
           },
-        }),
-      ),
+        });
+      }),
     );
     const descending = createdAtDirection === 'DESC';
     const idDescending = idDirection === 'DESC';
@@ -166,7 +185,7 @@ export class SubmissionStore {
           (idDescending ? -a.id.localeCompare(b.id) : a.id.localeCompare(b.id))
         );
       })
-      .slice(skip, skip + take);
+      .slice(cursor ? 0 : skip, (cursor ? 0 : skip) + take);
     await this.hydrateUsers(rows, relations);
     return rows;
   }

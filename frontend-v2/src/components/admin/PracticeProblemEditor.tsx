@@ -32,7 +32,6 @@ import ExecutionSettings from "@/app/admin/questions/create/_components/Executio
 import ProblemStatement from "@/app/admin/questions/create/_components/ProblemStatement";
 import Constraints from "@/app/admin/questions/create/_components/Constraints";
 import InputOutputFormat from "@/app/admin/questions/create/_components/InputOutputFormat";
-import SampleExamples from "@/app/admin/questions/create/_components/SampleExamples";
 import StarterCode from "@/app/admin/questions/create/_components/StarterCode";
 import ReferenceSolution from "@/app/admin/questions/create/_components/ReferenceSolution";
 import TestCases from "@/app/admin/questions/create/_components/TestCases";
@@ -51,7 +50,6 @@ const sections = [
   { id: "statement", label: "Statement", icon: FileText },
   { id: "constraints", label: "Constraints", icon: AlertTriangle },
   { id: "io-format", label: "I/O Format", icon: ArrowRightLeft },
-  { id: "sample-examples", label: "Examples", icon: BookOpen },
   { id: "starter-code", label: "Starter Code", icon: LayoutTemplate },
   { id: "reference-solution", label: "Reference", icon: Shield },
   { id: "test-cases", label: "Test Cases", icon: Database },
@@ -258,7 +256,6 @@ function Editor({ problemId, fromQuestion }: EditorProps) {
                 if (
                   (metadata.title ||
                     store.statement.description ||
-                    store.sampleExamples.length ||
                     store.testCases.length) &&
                   !window.confirm(
                     "Leave this draft and choose a question to import? Unsaved changes will be lost.",
@@ -338,7 +335,6 @@ function Editor({ problemId, fromQuestion }: EditorProps) {
                 <ProblemStatement />
                 <Constraints />
                 <InputOutputFormat />
-                <SampleExamples />
                 <StarterCode />
                 <ReferenceSolution />
                 <TestCases showTools={false} />

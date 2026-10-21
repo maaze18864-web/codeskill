@@ -52,3 +52,18 @@ output "judge0_base_url" {
   description = "Base URL for Judge0 submission API"
   value       = "http://judge0.${aws_service_discovery_private_dns_namespace.internal.name}:2358"
 }
+
+output "backend_service_id" {
+  description = "Backend Cloud Map Service ID"
+  value       = aws_service_discovery_service.backend.id
+}
+
+output "backend_dns_name" {
+  description = "Backend private DNS name"
+  value       = "backend.${aws_service_discovery_private_dns_namespace.internal.name}"
+}
+
+output "backend_base_url" {
+  description = "Internal base URL for backend API"
+  value       = "http://backend.${aws_service_discovery_private_dns_namespace.internal.name}:5001/api"
+}

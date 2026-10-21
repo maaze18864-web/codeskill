@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import MentorGratitude from '@/components/skill-development/MentorGratitude';
+import TeamSection from '@/components/skill-development/TeamSection';
 import {
   ArrowDownRight,
   ArrowLeft,
@@ -8,7 +9,6 @@ import {
   Lightbulb,
   Rocket,
   Target,
-  UsersRound,
 } from 'lucide-react';
 
 export const metadata = {
@@ -47,7 +47,7 @@ const learningSteps = [
 
 export default function SkillDevelopmentPage() {
   return (
-    <main className="relative min-h-screen overflow-hidden bg-background text-foreground">
+    <main className="relative min-h-screen overflow-x-clip bg-background text-foreground">
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-x-0 top-0 h-[34rem] bg-gradient-to-b from-primary/10 via-primary/5 to-transparent"
@@ -57,7 +57,7 @@ export default function SkillDevelopmentPage() {
         className="pointer-events-none absolute -top-56 left-1/2 h-[34rem] w-[34rem] -translate-x-1/2 rounded-full bg-primary/10 blur-[120px]"
       />
 
-      <div className="relative mx-auto max-w-6xl px-5 py-14 sm:px-8 sm:py-20 lg:py-24">
+      <div className="relative mx-auto max-w-screen-2xl px-5 py-14 sm:px-8 sm:py-20 lg:py-24">
         <Link
           href="/"
           className="mb-10 inline-flex items-center gap-2 rounded-full border border-border/70 bg-card/70 px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground"
@@ -81,23 +81,7 @@ export default function SkillDevelopmentPage() {
 
         <MentorGratitude />
 
-        <figure className="mx-auto mt-12 max-w-5xl overflow-hidden rounded-3xl border border-border/80 bg-card shadow-xl shadow-black/5">
-          <div className="relative flex aspect-[16/8] min-h-56 items-center justify-center overflow-hidden bg-gradient-to-br from-primary/10 via-muted/70 to-emerald-500/10 sm:aspect-[16/6]">
-            <div aria-hidden="true" className="absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,hsl(var(--foreground)/0.08)_1px,transparent_0)] [background-size:22px_22px]" />
-            <div className="relative mx-5 flex max-w-lg flex-col items-center rounded-2xl border border-border/70 bg-background/85 px-6 py-7 text-center shadow-sm backdrop-blur-sm sm:px-10">
-              <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-primary/20 bg-primary/10 text-primary">
-                <UsersRound className="h-7 w-7" aria-hidden="true" />
-              </div>
-              <p className="font-heading text-lg font-bold">Technical Training team</p>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                Group photograph space · Add the team photo here when it is available.
-              </p>
-            </div>
-          </div>
-          <figcaption className="border-t border-border/70 px-5 py-3 text-center text-xs text-muted-foreground">
-            A collaborative effort to make skill-building practical, engaging, and continuous.
-          </figcaption>
-        </figure>
+        <TeamSection />
 
         <section className="mx-auto mt-16 grid max-w-5xl gap-5 md:grid-cols-2">
           <article className="rounded-3xl border border-border/70 bg-card/75 p-7 shadow-sm sm:p-9">

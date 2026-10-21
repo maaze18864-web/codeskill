@@ -13,21 +13,22 @@ describe('contest security and reattempts schema migration', () => {
 
     await applyContestSecurityReattemptMigration(queryRunner);
 
-    expect(executedQueries.length).toBe(5);
+    expect(executedQueries.length).toBe(4);
     // 1. resultsPublished
     expect(executedQueries[0]).toContain('resultsPublished');
     expect(executedQueries[0]).toContain('ALTER TABLE "contests" ADD COLUMN "resultsPublished"');
-    expect(executedQueries[1]).toContain('ALTER TABLE "contests" ADD COLUMN "format"');
+    expect(executedQueries[0]).toContain('contestFormat');
+    expect(executedQueries[0]).toContain("DEFAULT 'coding'");
     // 2. attemptNumber, score, problemsSolved
-    expect(executedQueries[2]).toContain('attemptNumber');
-    expect(executedQueries[2]).toContain('score');
-    expect(executedQueries[2]).toContain('problemsSolved');
+    expect(executedQueries[1]).toContain('attemptNumber');
+    expect(executedQueries[1]).toContain('score');
+    expect(executedQueries[1]).toContain('problemsSolved');
     // 3. Composite unique index
-    expect(executedQueries[3]).toContain('IDX_contest_attempts_contest_user_attempt');
-    expect(executedQueries[3]).toContain('("contest_id", "user_id", "attemptNumber")');
+    expect(executedQueries[2]).toContain('IDX_contest_attempts_contest_user_attempt');
+    expect(executedQueries[2]).toContain('("contest_id", "user_id", "attemptNumber")');
     // 4. contest_reattempt_grants table
-    expect(executedQueries[4]).toContain('CREATE TABLE IF NOT EXISTS "contest_reattempt_grants"');
-    expect(executedQueries[4]).toContain('"allowedAttempts"');
-    expect(executedQueries[4]).toContain('"usedAttempts"');
+    expect(executedQueries[3]).toContain('CREATE TABLE IF NOT EXISTS "contest_reattempt_grants"');
+    expect(executedQueries[3]).toContain('"allowedAttempts"');
+    expect(executedQueries[3]).toContain('"usedAttempts"');
   });
 });

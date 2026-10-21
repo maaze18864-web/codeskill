@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { adminStudentsAPI } from "@/config/api";
 import { Spinner } from "@/components/ui/spinner";
+import { getStandardizedSectionOptions } from "@/lib/sections";
 
 interface StudentProfile {
   university?: string;
@@ -748,15 +749,23 @@ export default function AdminStudentsPage() {
                     <label className="text-xs font-medium text-foreground">
                       Section
                     </label>
-                    <input
-                      type="text"
-                      placeholder="e.g. A"
+                    <select
+                      id="student-form-section"
                       value={formData.section}
                       onChange={(e) =>
                         setFormData({ ...formData, section: e.target.value })
                       }
                       className="w-full h-9 px-3 rounded-lg border border-border bg-background text-xs focus:ring-2 focus:ring-amber-500 outline-none"
-                    />
+                    >
+                      <option value="">Select Section (Optional)</option>
+                      {getStandardizedSectionOptions(
+                        formData.section ? [formData.section] : []
+                      ).map((sec) => (
+                        <option key={sec} value={sec}>
+                          Section {sec}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   <div className="space-y-1">

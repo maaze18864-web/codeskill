@@ -79,7 +79,7 @@ ExecStart=/usr/bin/docker run --rm --name codeskill-frontend \\
   -e PORT=3000 \\
   -e NEXT_PUBLIC_API_URL=https://${domain_name}/api \\
   -e NEXT_PUBLIC_SOCKET_URL=https://${domain_name} \\
-  -e INTERNAL_BACKEND_URL=https://${domain_name}/api \\
+  -e INTERNAL_BACKEND_URL=${internal_backend_url} \\
   $IMAGE
 ExecStop=/usr/bin/docker stop -t 15 codeskill-frontend
 

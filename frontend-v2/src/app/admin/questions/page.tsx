@@ -708,6 +708,8 @@ function QuestionsAdminContent() {
           batches={batches}
           selectedBatchId={selectedBatchId}
           onBatchChange={(id) => { setSelectedBatchId(id); setPage(1); updateUrlParam("batchId", id); }}
+          showBulkEdit={false}
+          showFilterSubmit={false}
         />
       )}
 

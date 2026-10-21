@@ -26,6 +26,7 @@ import {
   Layers
 } from "lucide-react";
 import { adminAssessmentsAPI } from "@/config/api";
+import toast from "react-hot-toast";
 
 export default function AssessmentResultsPage({
   params,
@@ -41,6 +42,36 @@ export default function AssessmentResultsPage({
   const [viewMode, setViewMode] = useState<"candidates" | "all_attempts">("candidates");
   const [selectedCandidate, setSelectedCandidate] = useState<any | null>(null);
   const [modalTab, setModalTab] = useState<"proctoring" | "code" | "attempts">("proctoring");
+
+  const [downloadingReports, setDownloadingReports] = useState<string[]>([]);
+
+  const downloadReport = async (attempt: any) => {
+    const attemptId = attempt.id || attempt._id;
+    if (!attemptId) {
+      toast.error("This attempt has no report ID.");
+      return;
+    }
+    setDownloadingReports((current) => [...current, attemptId]);
+    try {
+      const response = await adminAssessmentsAPI.getAttemptReport(attemptId);
+      if (!response.data.type?.includes("application/pdf")) {
+        throw new Error("The server did not return a PDF report.");
+      }
+      const url = URL.createObjectURL(response.data);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `assessment-report-${attemptId}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      // Let the browser start reading the PDF before releasing its object URL.
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch {
+      toast.error("Could not download this report. Please try again.");
+    } finally {
+      setDownloadingReports((current) => current.filter((value) => value !== attemptId));
+    }
+  };
 
   const fetchResults = async () => {
     setIsLoading(true);
@@ -422,15 +453,16 @@ export default function AssessmentResultsPage({
                         </button>
                       </td>
                       <td className="p-3.5 text-center">
-                        <a
-                          href={`http://localhost:3001/reports/assessment-attempt/${att._id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
+                          type="button"
+                          onClick={() => downloadReport(att)}
+                          disabled={downloadingReports.includes(att.id || att._id)}
+                          aria-busy={downloadingReports.includes(att.id || att._id)}
                           className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-primary text-primary-foreground hover:bg-primary/90 text-[11px] font-semibold rounded-lg shadow-sm transition-colors"
                           title="Download PDF Report"
                         >
-                          <Download className="w-3 h-3" /> PDF
-                        </a>
+                          <Download className="w-3 h-3" /> {downloadingReports.includes(att.id || att._id) ? "Loading…" : "PDF"}
+                        </button>
                       </td>
                       <td className="p-3.5 text-right font-mono text-[11px]">
                         {att.submittedAt ? new Date(att.submittedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "In Progress"}
@@ -522,15 +554,16 @@ export default function AssessmentResultsPage({
                         </button>
                       </td>
                       <td className="p-3.5 text-center">
-                        <a
-                          href={`http://localhost:3001/reports/assessment-attempt/${att._id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                        <button
+                          type="button"
+                          onClick={() => downloadReport(att)}
+                          disabled={downloadingReports.includes(att.id || att._id)}
+                          aria-busy={downloadingReports.includes(att.id || att._id)}
                           className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-primary text-primary-foreground hover:bg-primary/90 text-[11px] font-semibold rounded-lg shadow-sm transition-colors"
                           title="Download PDF Report"
                         >
-                          <Download className="w-3 h-3" /> PDF
-                        </a>
+                          <Download className="w-3 h-3" /> {downloadingReports.includes(att.id || att._id) ? "Loading…" : "PDF"}
+                        </button>
                       </td>
                       <td className="p-3.5 text-right font-mono text-[11px]">
                         {att.submittedAt ? new Date(att.submittedAt).toLocaleString([], { dateStyle: "short", timeStyle: "short" }) : "In Progress"}
@@ -616,7 +649,7 @@ export default function AssessmentResultsPage({
                     : "text-muted-foreground hover:text-foreground hover:bg-muted"
                 }`}
               >
-                <Code className="w-3.5 h-3.5" /> Code & Answers ({(selectedCandidate.responses || []).filter((r: any) => r.code || r.selectedAnswer !== -1).length})
+                <Code className="w-3.5 h-3.5" /> Code & Answers ({(selectedCandidate.responses || []).filter((r: any) => r.code || (Array.isArray(r.selectedAnswers) && r.selectedAnswers.length > 0) || r.selectedAnswer !== -1).length})
               </button>
               <button
                 type="button"
@@ -729,7 +762,11 @@ export default function AssessmentResultsPage({
                         <div className="text-[11px] text-muted-foreground">
                           Option Selected:{" "}
                           <strong className="text-foreground">
-                            {resp.selectedAnswer >= 0 ? `Option ${String.fromCharCode(65 + resp.selectedAnswer)}` : "None"}
+                            {Array.isArray(resp.selectedAnswers) && resp.selectedAnswers.length > 0
+                              ? `Options ${resp.selectedAnswers.map((idx: number) => String.fromCharCode(65 + idx)).join(", ")}`
+                              : resp.selectedAnswer >= 0
+                                ? `Option ${String.fromCharCode(65 + resp.selectedAnswer)}`
+                                : "None"}
                           </strong>
                         </div>
                       )}

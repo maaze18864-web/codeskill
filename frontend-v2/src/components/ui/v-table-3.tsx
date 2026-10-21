@@ -107,6 +107,8 @@ interface VTable3Props {
   batches?: any[];
   selectedBatchId?: string;
   onBatchChange?: (id: string) => void;
+  showBulkEdit?: boolean;
+  showFilterSubmit?: boolean;
 }
 
 export function VTable3({
@@ -144,6 +146,8 @@ export function VTable3({
   batches = [],
   selectedBatchId = '',
   onBatchChange,
+  showBulkEdit = true,
+  showFilterSubmit = true,
 }: VTable3Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [selectionMode, setSelectionMode] = useState(false);
@@ -195,7 +199,9 @@ export function VTable3({
 
   const getStatusColor = (status: string) => {
     switch (status?.toLowerCase()) {
-      case "active": return "bg-emerald-500/10 text-emerald-600 border-emerald-500/20";
+      case "active":
+      case "approved": return "bg-emerald-500/10 text-emerald-600 border-emerald-500/20";
+      case "pending":
       case "pending_review": return "bg-amber-500/10 text-amber-600 border-amber-500/20";
       case "draft": return "bg-slate-500/10 text-slate-600 border-slate-500/20";
       case "rejected": return "bg-rose-500/10 text-rose-600 border-rose-500/20";
@@ -230,7 +236,7 @@ export function VTable3({
             </button>
             {selectionMode && selectedQuestionIds.length > 0 && (
               <>
-                {onBulkEdit && (
+                {showBulkEdit && onBulkEdit && (
                   <button
                     type="button"
                     onClick={onBulkEdit}
@@ -317,8 +323,8 @@ export function VTable3({
             className="px-3 py-2 bg-background border border-border rounded-lg text-sm text-foreground focus:outline-none focus:border-amber-500"
           >
             <option value="">All Statuses</option>
-            <option value="active">Active</option>
-            <option value="pending_review">Pending Review</option>
+            <option value="approved">Approved</option>
+            <option value="pending">Pending Review</option>
             <option value="draft">Draft</option>
             <option value="rejected">Rejected</option>
           </select>
@@ -337,12 +343,12 @@ export function VTable3({
             ))}
           </select>
 
-          <button
+          {showFilterSubmit && <button
             type="submit"
             className="px-4 py-2 bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg text-sm font-medium transition-colors"
           >
             Filter
-          </button>
+          </button>}
 
           {hasFilters && (
             <button

@@ -25,7 +25,12 @@ describe('Question publication persistence', () => {
       stored = { ...value };
       return Promise.resolve(value);
     }),
-    findOne: jest.fn(() => Promise.resolve(stored)),
+    findOne: jest.fn((options?: any) => {
+      if (options?.where?.id) {
+        return Promise.resolve(stored);
+      }
+      return Promise.resolve(null);
+    }),
   };
   const audit = {
     create: jest.fn((value: unknown) => value),

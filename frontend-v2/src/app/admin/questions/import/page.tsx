@@ -24,9 +24,12 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import { adminQuestionsAPI } from "@/config/api";
+import { importErrorMessage } from "@/lib/import-error";
 import { Spinner } from "@/components/ui/spinner";
 
 interface PreviewData {
+  sheetNames: string[];
+  selectedSheet: string | null;
   summary: {
     totalRows: number;
     validCount: number;
@@ -51,6 +54,7 @@ export default function ImportQuestionsPage() {
   const [mergeStrategy, setMergeStrategy] = useState<"skip" | "update" | "merge">("skip");
   const [activeTab, setActiveTab] = useState<"all" | "new" | "duplicates" | "conflicts" | "errors">("all");
   const [previewData, setPreviewData] = useState<PreviewData | null>(null);
+  const [selectedSheet, setSelectedSheet] = useState("");
   const [importResult, setImportResult] = useState<{
     totalProcessed: number;
     insertedCount: number;
@@ -60,6 +64,7 @@ export default function ImportQuestionsPage() {
     message?: string;
   } | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [committedRows, setCommittedRows] = useState(0);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
@@ -86,16 +91,17 @@ export default function ImportQuestionsPage() {
       setErrorMessage("Please upload a valid CSV or Excel spreadsheet (.csv, .xlsx, .xls).");
       return;
     }
+    if (selectedFile.size > 15 * 1024 * 1024) {
+      setErrorMessage("Question files must be 15 MiB or smaller.");
+      return;
+    }
     setFile(selectedFile);
     setErrorMessage(null);
     setPreviewData(null);
+    setSelectedSheet("");
     setImportResult(null);
 
-    if (instantPush) {
-      handleOneAttemptAutoImport(selectedFile);
-    } else {
-      processPreview(selectedFile);
-    }
+    void processPreview(selectedFile, undefined, instantPush);
   };
 
   const handleOneAttemptAutoImport = async (selectedFile: File) => {
@@ -115,8 +121,7 @@ export default function ImportQuestionsPage() {
       });
     } catch (err: any) {
       setErrorMessage(
-        err.response?.data?.message ||
-          "Failed to automatically upload and push questions in one attempt. Please check the CSV or Excel format."
+        importErrorMessage(err, "Failed to automatically import questions.")
       );
     } finally {
       setIsValidating(false);
@@ -124,16 +129,20 @@ export default function ImportQuestionsPage() {
     }
   };
 
-  const processPreview = async (selectedFile: File) => {
+  const processPreview = async (selectedFile: File, sheetName?: string, autoIfSingleSheet = false) => {
     setIsValidating(true);
     setErrorMessage(null);
+    setPreviewData(null);
     try {
-      const res = await adminQuestionsAPI.importPreview(selectedFile);
+      const res = await adminQuestionsAPI.importPreview(selectedFile, sheetName);
       setPreviewData(res.data);
+      setSelectedSheet(res.data.selectedSheet || "");
+      if (autoIfSingleSheet && res.data.sheetNames.length === 1) {
+        await handleOneAttemptAutoImport(selectedFile);
+      }
     } catch (err: any) {
       setErrorMessage(
-        err.response?.data?.message ||
-          "Failed to parse and validate question spreadsheet. Please check columns format."
+        importErrorMessage(err, "Could not validate the question spreadsheet. Please check the file format and required columns.")
       );
     } finally {
       setIsValidating(false);
@@ -144,22 +153,49 @@ export default function ImportQuestionsPage() {
     if (!previewData || previewData.summary.totalRows === 0) return;
 
     setIsCommitting(true);
+    setCommittedRows(0);
     setErrorMessage(null);
+    let processedRows = 0;
     try {
-      const res = await adminQuestionsAPI.confirmImport(previewData.validRows, mergeStrategy, previewData.summary.totalRows, file?.name);
-      const data = res.data;
+      // The API accepts up to 4 MiB of JSON. Keep each request well below that
+      // limit while preserving the selected merge strategy for every batch.
+      const maxBatchBytes = 2 * 1024 * 1024;
+      const batches: any[][] = [];
+      let batch: any[] = [];
+      let batchBytes = new Blob([JSON.stringify({ validRows: [], mergeStrategy })]).size;
+      for (const row of previewData.validRows) {
+        const rowBytes = new Blob([JSON.stringify(row)]).size + 1;
+        if (rowBytes + batchBytes > maxBatchBytes && batch.length > 0) {
+          batches.push(batch);
+          batch = [];
+          batchBytes = new Blob([JSON.stringify({ validRows: [], mergeStrategy })]).size;
+        }
+        if (rowBytes + batchBytes > maxBatchBytes) {
+          throw new Error("A question is too large to import. Reduce its code or test-case content and retry.");
+        }
+        batch.push(row);
+        batchBytes += rowBytes;
+      }
+      if (batch.length > 0) batches.push(batch);
+
+      const data = { totalProcessed: 0, insertedCount: 0, updatedCount: 0, skippedCount: 0 };
+      for (const rows of batches) {
+        const res = await adminQuestionsAPI.confirmImport(rows, mergeStrategy, rows.length, file?.name);
+        data.totalProcessed += res.data.totalProcessed ?? res.data.count ?? rows.length;
+        data.insertedCount += res.data.insertedCount ?? 0;
+        data.updatedCount += res.data.updatedCount ?? 0;
+        data.skippedCount += res.data.skippedCount ?? 0;
+        processedRows += rows.length;
+        setCommittedRows(processedRows);
+      }
       setImportResult({
-        totalProcessed: data.totalProcessed || data.count || previewData.validRows.length,
-        insertedCount: data.insertedCount ?? 0,
-        updatedCount: data.updatedCount ?? 0,
-        skippedCount: data.skippedCount ?? 0,
-        mergeStrategy: data.mergeStrategy || mergeStrategy,
-        message: data.message,
+        ...data,
+        mergeStrategy,
+        message: `Processed ${data.totalProcessed} questions in ${batches.length} batch${batches.length === 1 ? "" : "es"}.`,
       });
     } catch (err: any) {
       setErrorMessage(
-        err.response?.data?.message ||
-          "Failed to commit questions into database."
+        `${importErrorMessage(err, "Failed to commit questions into database.")}${processedRows > 0 ? " Some earlier batches may have succeeded; retry with Skip to avoid duplicates." : ""}`
       );
     } finally {
       setIsCommitting(false);
@@ -431,6 +467,7 @@ export default function ImportQuestionsPage() {
               onClick={() => {
                 setFile(null);
                 setPreviewData(null);
+                setSelectedSheet("");
                 setImportResult(null);
               }}
               className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl border border-border hover:bg-muted text-sm font-semibold transition-colors"
@@ -511,8 +548,32 @@ export default function ImportQuestionsPage() {
             </div>
           )}
 
+          {previewData && previewData.sheetNames.length > 1 && (
+            <div className="rounded-xl border border-border bg-card p-4">
+              <label htmlFor="question-import-sheet" className="block text-sm font-semibold text-foreground">
+                Worksheet to import
+              </label>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Choose a worksheet and review its questions before importing. One-click import applies to single-sheet files.
+              </p>
+              <select
+                id="question-import-sheet"
+                value={selectedSheet}
+                onChange={(event) => {
+                  const sheet = event.target.value;
+                  setSelectedSheet(sheet);
+                  if (file && sheet) void processPreview(file, sheet);
+                }}
+                className="mt-3 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground sm:max-w-sm"
+              >
+                <option value="">Select a worksheet</option>
+                {previewData.sheetNames.map((sheet) => <option key={sheet} value={sheet}>{sheet}</option>)}
+              </select>
+            </div>
+          )}
+
           {/* Preview Results */}
-          {previewData && !importResult && (
+          {previewData?.selectedSheet && !importResult && (
             <div className="space-y-6">
               {/* Summary Stats Cards */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -571,7 +632,7 @@ export default function ImportQuestionsPage() {
                     {isCommitting ? (
                       <>
                         <Spinner className="w-4 h-4 animate-spin" />
-                        Executing Import…
+                        Executing Import… {committedRows > 0 ? `${committedRows}/${previewData.validRows.length}` : ""}
                       </>
                     ) : (
                       <>

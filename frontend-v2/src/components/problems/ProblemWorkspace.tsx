@@ -1,5 +1,7 @@
 "use client";
 
+import { editorStarterCode } from "@/lib/editor-languages";
+
 import { useExecutionRuntimes } from "@/hooks/useExecutionRuntimes";
 
 import { motion, AnimatePresence } from "framer-motion";
@@ -14,8 +16,9 @@ import {
 } from "lucide-react";
 import { ProgrammingLanguageIcon } from "@/components/ui/ProgrammingLanguageIcon";
 import SampleTestCasesPanel, { hasSampleContent } from "@/components/problems/SampleTestCasesPanel";
+import { publicProblemRunCases } from "@/lib/problem-run-cases";
 import Link from "next/link";
-import { useState, useEffect, useCallback, use, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, use, useRef } from "react";
 import { Panel, Group as PanelGroup, Separator as PanelResizeHandle } from "react-resizable-panels";
 import Editor from "@monaco-editor/react";
 import { submissionAPI, runAPI, problemsAPI, discussionsAPI } from "@/config/api";
@@ -77,6 +80,7 @@ export default function ProblemWorkspace({ params, embedded = false, contestId }
   const { theme } = useTheme();
   
   const [problem, setProblem] = useState<any>(null);
+  const testCases = useMemo(() => publicProblemRunCases(problem), [problem]);
   const [loading, setLoading] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -162,7 +166,7 @@ export default function ProblemWorkspace({ params, embedded = false, contestId }
       setCode(savedDraft);
     } else {
       // Use starter code from problem config if available, else language default
-      const starterCode = problem.config?.starterCode?.[language];
+      const starterCode = editorStarterCode(problem.config?.starterCode, language);
       const defaultCode = starterCode || LANGUAGES.find(l => l.id === language)?.defaultCode || "";
       setCode(defaultCode);
     }
@@ -313,15 +317,7 @@ export default function ProblemWorkspace({ params, embedded = false, contestId }
     setEditorInst(editor);
   };
 
-  const getTestCases = () => {
-    if (!problem || !problem.testCases || !problem.testCases.cases || problem.testCases.cases.length === 0) {
-      return [];
-    }
-    // Only public cases are shown and run in the terminal; hidden cases are judge-only.
-    return problem.testCases.cases
-      .filter((tc: any) => tc.isHidden !== true && hasSampleContent(tc))
-      .map((tc: any, i: number) => ({ id: i + 1, input: tc.input, expected: tc.output }));
-  };
+  const getTestCases = () => testCases;
 
   const executeCode = async () => {
     const apiTestCases = getTestCases().map((tc: any) => ({
@@ -520,7 +516,7 @@ export default function ProblemWorkspace({ params, embedded = false, contestId }
 
   const handleResetCode = () => {
     if (!problem) return;
-    const starterCode = problem.config?.starterCode?.[language];
+    const starterCode = editorStarterCode(problem.config?.starterCode, language);
     const defaultCode = starterCode || LANGUAGES.find(l => l.id === language)?.defaultCode || "";
     setCode(defaultCode);
     localStorage.removeItem(`codeskill_draft_${problem.slug}_${language}`);
@@ -575,8 +571,12 @@ export default function ProblemWorkspace({ params, embedded = false, contestId }
   }
 
   const editorTheme = theme === "dark" ? "vs-dark" : "light";
-  const testCases = getTestCases();
-  const displaySamples = (problem.statement?.samples ?? []).filter(hasSampleContent);
+  // Left-panel examples fall back to the public (non-hidden) test cases.
+  const displaySamples = problem.statement?.samples?.length
+    ? problem.statement.samples.filter(hasSampleContent)
+    : (problem.testCases?.cases || [])
+        .filter((tc: any) => tc.isHidden !== true && hasSampleContent(tc))
+        .map((tc: any) => ({ input: tc.input, output: tc.output, explanation: tc.explanation }));
   const difficultyClass = DIFFICULTY_COLORS[problem.difficulty] || DIFFICULTY_COLORS.Easy;
   const acceptanceRate = problem.stats?.totalSubmissions > 0
     ? ((problem.stats.acceptedSubmissions / problem.stats.totalSubmissions) * 100).toFixed(1)
@@ -850,10 +850,17 @@ export default function ProblemWorkspace({ params, embedded = false, contestId }
                     {activeSidebarTab === "samples" && (
                       <div className="p-5">
                         <h3 className="text-xs font-bold text-foreground uppercase tracking-wider mb-3">
-                          Examples
+                          Sample Test Cases
                         </h3>
                         <SampleTestCasesPanel
                           samples={displaySamples}
+                          onLoad={(sample) => {
+                            const match = testCases.findIndex(
+                              (tc: any) => (tc.input || "") === (sample.input || ""),
+                            );
+                            setActiveTestCase(match >= 0 ? match : 0);
+                            setActiveBottomTab("testcases");
+                          }}
                         />
                       </div>
                     )}

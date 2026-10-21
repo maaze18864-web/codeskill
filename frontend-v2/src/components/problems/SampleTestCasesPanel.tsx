@@ -24,7 +24,10 @@ interface SampleTestCasesPanelProps {
   onLoad?: (sample: SampleCase, index: number) => void;
 }
 
-/** Instructional examples authored separately from the judge's test cases. */
+/**
+ * Candidate-facing sample test cases. Public (non-hidden) cases only — the judge
+ * keeps hidden cases for grading.
+ */
 export default function SampleTestCasesPanel({
   samples,
   onLoad,
@@ -32,7 +35,7 @@ export default function SampleTestCasesPanel({
   if (samples.length === 0) {
     return (
       <p className="text-xs text-muted-foreground italic leading-relaxed">
-        No examples have been provided for this problem. Read input from standard input
+        No sample test cases for this problem. Read input from standard input
         (stdin) and write your answer to standard output (stdout).
       </p>
     );

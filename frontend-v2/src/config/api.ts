@@ -100,14 +100,30 @@ api.interceptors.response.use(
 
     notifyMutationFailure(reqUrl, error.config?.method || "", error);
 
-    if (status && status >= 400) {
+    if (status && status >= 500) {
+      logger.error("API service error", {
+        requestId,
+        status,
+        url: reqUrl,
+        message: error.code === "ECONNABORTED"
+          ? "Request timed out"
+          : error.message === "Network Error"
+            ? "Network unavailable"
+            : "Server returned an error",
+      }, "APIClient");
+    } else if (!status) {
+      logger.warn("API request could not reach the service", {
+        requestId,
+        url: reqUrl,
+        message: error.code === "ECONNABORTED" ? "Request timed out" : "Network unavailable",
+      }, "APIClient");
+    } else if (status >= 400) {
       logger.warn(
         `API request failed: [${status}] ${reqUrl}`,
         {
           requestId,
           status,
           url: reqUrl,
-          response: error.response?.data,
         },
         "APIClient"
       );
@@ -286,12 +302,13 @@ export const usersAPI = {
 
 // ── Public Problems ──
 export const problemsAPI = {
-  getAll: (page = 1, limit = 20, search = "", category = "All Topics", signal?: AbortSignal) => {
-    const params: { page: number; limit: number; search?: string; category?: string } = { page, limit };
+  getAll: (page = 1, limit = 20, search = "", category = "All Topics", signal?: AbortSignal, difficulty?: string) => {
+    const params: { page: number; limit: number; search?: string; category?: string; difficulty?: string } = { page, limit };
     const query = normalizeProblemQuery(search);
     const topic = normalizeProblemQuery(category, true);
     if (query) params.search = query;
     if (topic) params.category = topic;
+    if (difficulty && difficulty !== "All") params.difficulty = difficulty;
     return api.get("/problems", { params, signal });
   },
   getBySlug: (slug: string) => api.get(`/problems/${slug}`),
@@ -392,7 +409,7 @@ export const discussionsAPI = {
 
 // ── Admin ──
 export const adminProblemsAPI = {
-  getAll: (params?: { page?: number; limit?: number; search?: string }, signal?: AbortSignal) =>
+  getAll: (params?: { page?: number; limit?: number; search?: string; contestEligible?: boolean }, signal?: AbortSignal) =>
     api.get("/admin/problems", { params, signal }),
   getById: (id: string) => api.get(`/admin/problems/${id}`),
   create: (data: any) => api.post("/admin/problems", data),
@@ -580,18 +597,20 @@ export const adminQuestionsAPI = {
   approve: (id: string) => api.put(`/admin/questions/${id}/approve`),
   reject: (id: string, reason: string) => api.put(`/admin/questions/${id}/reject`, { reason }),
   getTopics: (topic?: string) => api.get("/admin/questions/topics", { params: { topic } }),
-  importPreview: (file: File) => {
+  importPreview: (file: File, sheetName?: string) => {
     const formData = new FormData();
     formData.append("file", file);
+    if (sheetName) formData.append("sheetName", sheetName);
     return api.post("/admin/questions/import", formData, {
       headers: { "Content-Type": "multipart/form-data" },
     });
   },
   confirmImport: (validRows: any[], mergeStrategy?: 'skip' | 'update' | 'merge', totalRows?: number, originalFilename?: string) =>
     api.post("/admin/questions/import/confirm", { validRows, mergeStrategy, totalRows, originalFilename }),
-  autoImport: (file: File, mergeStrategy?: 'skip' | 'update' | 'merge') => {
+  autoImport: (file: File, mergeStrategy?: 'skip' | 'update' | 'merge', sheetName?: string) => {
     const formData = new FormData();
     formData.append("file", file);
+    if (sheetName) formData.append("sheetName", sheetName);
     return api.post(`/admin/questions/import/auto${mergeStrategy ? `?mergeStrategy=${mergeStrategy}` : ""}`, formData, {
       headers: { "Content-Type": "multipart/form-data" },
     });
@@ -615,6 +634,8 @@ export const adminAssessmentsAPI = {
   updateStatus: (id: string, status: string) => api.put(`/admin/assessments/${id}/status`, { status }),
   delete: (id: string) => api.delete(`/admin/assessments/${id}`),
   getResults: (id: string) => api.get(`/admin/assessments/${id}/results`),
+  getAttemptReport: (attemptId: string) =>
+    api.get(`/reports/assessment-attempt/${encodeURIComponent(attemptId)}`, { responseType: "blob" }),
 };
 
 export const adminBugsAPI = {

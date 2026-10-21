@@ -1,6 +1,7 @@
 import {
   canonicalEditorLanguage,
   editorLanguages,
+  editorStarterCode,
 } from "@/lib/editor-languages";
 const options = [{ id: "javascript" }, { id: "python" }, { id: "cpp" }];
 it("intersects problem permissions and enabled runtimes, including aliases", () => {
@@ -15,6 +16,11 @@ it("intersects problem permissions and enabled runtimes, including aliases", () 
       ],
     ),
   ).toEqual([{ id: "python" }]);
+});
+it("loads imported starter code using canonical language aliases", () => {
+  expect(editorStarterCode({ python3: "print(input())" }, "python")).toBe("print(input())");
+  expect(editorStarterCode({ "c++": "int main() {}" }, "cpp")).toBe("int main() {}");
+  expect(editorStarterCode({ python3: [] }, "python")).toBeUndefined();
 });
 it("keeps unrestricted configurations working and returns no options for unsupported languages", () => {
   expect(editorLanguages(options, [])).toEqual(options);

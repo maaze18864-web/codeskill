@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import Page from "@/app/assessments/[id]/take/page";
 import { studentAssessmentsAPI } from "@/config/api";
 import { clearAssessmentFaceReference, setAssessmentFaceReference } from "@/lib/assessment-face-verification";
+import { releaseAssessmentStream } from "@/lib/assessment-media-session";
 const replace = jest.fn();
 const mockRouter = { replace };
 jest.mock("react", () => ({ ...jest.requireActual("react"), use: () => ({ id: "exam" }) }));
@@ -23,7 +24,7 @@ beforeEach(() => {
   jest.mocked(studentAssessmentsAPI.startAttempt).mockResolvedValue({ data: { durationMinutes: 1, startedAt: new Date().toISOString(), questions: [{ _id: "q1", question: "Question", questionType: "MCQ", options: ["A", "B"], marks: 1, difficulty: "easy" }] } });
   jest.mocked(studentAssessmentsAPI.submitAttempt).mockImplementation(() => new Promise(() => {}));
 });
-afterEach(() => { clearAssessmentFaceReference("exam"); jest.restoreAllMocks(); jest.useRealTimers(); });
+afterEach(() => { releaseAssessmentStream("exam"); clearAssessmentFaceReference("exam"); jest.restoreAllMocks(); jest.useRealTimers(); });
 async function renderAssessmentPage() {
   render(<Page params={Promise.resolve({ id: "exam" })} />);
   // Wait for the settings effect to settle before interacting with the assessment.

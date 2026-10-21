@@ -71,6 +71,13 @@ it.each(["upcoming", "ended", "draft"])("does not offer attempts for %s assessme
   render(<Page />); await screen.findByRole("heading", { name: "Coding Problem Test" });
   expect(screen.queryByRole("link", { name: "Attempt Now" })).toBeNull();
 });
+it("shows an expired window for an unfinished attempt after its scheduled end", async () => {
+  load.mockResolvedValue({ data: { assessments: [{ ...fixtures[0], attemptStatus: "in_progress", endTime: new Date(Date.now() - 1000).toISOString() }] } });
+  render(<Page />); await screen.findByRole("heading", { name: "Coding Problem Test" });
+  expect(screen.getByText("Expired", { exact: true, selector: "span" })).toBeInTheDocument();
+  expect(screen.queryByRole("link", { name: "Resume Assessment" })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Assessment closed" })).toBeDisabled();
+});
 it("preserves scorecards and routes permitted retakes through the secure assessment gate", async () => {
   load.mockResolvedValue({ data: { assessments: [{ ...fixtures[0], attemptStatus: "auto_submitted", canRetake: true, attemptScore: 0 }] } });
   render(<Page />); fireEvent.click(await screen.findByRole("button", { name: "Re-attempt" }));

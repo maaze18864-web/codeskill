@@ -1,0 +1,29 @@
+.desktop { display: none; }
+.fallback { padding: 92px 20px 28px; }
+.track { position: relative; height: calc(100svh + var(--helix-travel)); }
+.viewport {
+  position: sticky;
+  top: var(--helix-nav);
+  height: calc(100svh - var(--helix-nav));
+  display: flex;
+  flex-direction: column;
+  padding: 24px 24px 20px;
+}
+.stage {
+  position: relative;
+  flex: 1;
+  min-height: 160px;
+  margin-top: var(--helix-gap);
+  overflow: clip;
+  perspective: 1200px;
+  touch-action: pan-y;
+  isolation: isolate;
+}
+.space { position: absolute; inset: 0; transform-style: preserve-3d; }
+.portrait { position: absolute; left: 50%; top: 50%; }
+.portrait img { backface-visibility: hidden; }
+
+@media (min-width: 768px) and (min-height: 640px) and (prefers-reduced-motion: no-preference) {
+  .desktop { display: block; }
+  .fallback { display: none; }
+}

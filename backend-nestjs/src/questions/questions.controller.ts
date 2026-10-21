@@ -63,11 +63,14 @@ export class QuestionsController {
       limits: { fileSize: 15 * 1024 * 1024 },
     }),
   )
-  async importPreview(@UploadedFile() file: Express.Multer.File) {
+  async importPreview(
+    @UploadedFile() file: Express.Multer.File,
+    @Body('sheetName') sheetName?: string,
+  ) {
     if (!file) {
       throw new BadRequestException('Spreadsheet file is required');
     }
-    return this.questionsService.parseAndValidateQuestionsImport(file.buffer);
+    return this.questionsService.parseAndValidateQuestionsImport(file.buffer, sheetName?.trim(), true);
   }
 
   @Get('bulk-upload-batches')
@@ -103,6 +106,7 @@ export class QuestionsController {
     @Query('mergeStrategy') mergeStrategy: 'skip' | 'update' | 'merge' = 'skip',
     @CurrentUser() adminUser: any,
     @Req() req: any,
+    @Body('sheetName') sheetName?: string,
   ) {
     if (!file) {
       throw new BadRequestException('Spreadsheet/CSV file is required');
@@ -115,6 +119,7 @@ export class QuestionsController {
       ip,
       userAgent,
       mergeStrategy,
+      sheetName?.trim(),
       file.originalname,
     );
   }

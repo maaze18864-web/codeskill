@@ -84,7 +84,7 @@ resource "aws_lb_target_group" "backend" {
   stickiness {
     type            = "lb_cookie"
     cookie_duration = 3600
-    enabled         = true
+    enabled         = var.backend_stickiness_enabled
   }
 
   tags = merge(

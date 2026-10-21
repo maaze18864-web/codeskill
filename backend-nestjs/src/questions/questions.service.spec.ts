@@ -543,5 +543,89 @@ describe('QuestionsService - True/False Questions Handling', () => {
     });
   });
 
+  describe('Slug collision handling and NULL status visibility', () => {
+    it('auto-increments slug with -2 when base slug already exists on another question', async () => {
+      mockQuestionRepo.findOne = jest
+        .fn()
+        .mockResolvedValueOnce({ id: 'existing-q', slug: 'binary-search-tree' })
+        .mockResolvedValueOnce(null);
+
+      const dto: any = {
+        question: 'What is a BST?',
+        title: 'Binary Search Tree',
+        slug: 'binary-search-tree',
+        topic: 'Data Structures',
+        questionType: 'MCQ',
+        options: ['Tree', 'Graph'],
+        correctAnswer: 0,
+        marks: 1,
+      };
+
+      const result = await service.create(dto, mockAdminUser);
+      expect(result.slug).toBe('binary-search-tree-2');
+    });
+
+    it('throws BadRequestException in update if target slug is already taken by another question', async () => {
+      const existingQuestion = {
+        id: 'q-current',
+        question: 'Original Question',
+        slug: 'original-slug',
+        status: 'approved',
+      };
+      mockQuestionRepo.findOne = jest.fn((options: any) => {
+        if (options?.where?.id === 'q-current') return Promise.resolve(existingQuestion);
+        if (options?.where?.slug === 'colliding-slug') {
+          return Promise.resolve({ id: 'q-other', slug: 'colliding-slug' });
+        }
+        return Promise.resolve(null);
+      });
+
+      await expect(
+        service.update('q-current', { slug: 'colliding-slug' }, mockAdminUser),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('includes rows with NULL status when finding all questions without status filter', async () => {
+      const qb = {
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        skip: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getManyAndCount: jest.fn().mockResolvedValue([
+          [
+            { id: 'q-legacy', question: 'Legacy Question without status', status: null },
+          ],
+          1,
+        ]),
+      };
+      mockQuestionRepo.createQueryBuilder.mockReturnValue(qb);
+
+      const result = await service.findAll({});
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        '(question.status IS NULL OR question.status != :archived)',
+        { archived: 'archived' },
+      );
+      expect(result.questions).toHaveLength(1);
+    });
+
+    it('maps query.status=active to approved, active, and NULL in findAll', async () => {
+      const qb = {
+        leftJoinAndSelect: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        orderBy: jest.fn().mockReturnThis(),
+        skip: jest.fn().mockReturnThis(),
+        take: jest.fn().mockReturnThis(),
+        getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
+      };
+      mockQuestionRepo.createQueryBuilder.mockReturnValue(qb);
+
+      await service.findAll({ status: 'active' });
+      expect(qb.andWhere).toHaveBeenCalledWith(
+        '(question.status IN (:...statuses) OR question.status IS NULL)',
+        { statuses: ['approved', 'active'] },
+      );
+    });
+  });
 });
 

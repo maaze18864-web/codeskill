@@ -114,20 +114,19 @@ it("preserves explicit private visibility despite stale Publish Immediately flag
   await waitFor(() => expect(update).toHaveBeenCalledWith("question-1", expect.objectContaining({ visibility: "Private", status: "draft", contestOnly: false })));
 });
 
-it("edits saved examples independently and supports clearing them", async () => {
+it("saves a hidden imported test as public without dropping its contents or editorial", async () => {
   getById.mockResolvedValueOnce({ data: { ...existing,
-    examples: [{ input: "7", output: "14", explanation: "Double seven" }],
+    metadata: { ...existing.metadata, visibility: "Published", solutionExplanation: "Greedy on bits." },
+    referenceSolutions: [{ language: "cpp", sourceCode: "int main() {}" }],
   } } as Awaited<ReturnType<typeof adminQuestionsAPI.getById>>);
   render(<EditQuestion />);
-  expect(await screen.findByLabelText("Example 1 input")).toHaveValue("7");
-  expect(screen.getByLabelText("Test case 1 input")).toHaveValue("1");
-  fireEvent.change(screen.getByLabelText("Example 1 output"), { target: { value: "15" } });
+  await screen.findByLabelText("Test case 1 input");
+  fireEvent.click(screen.getByRole("button", { name: "Hidden", exact: true }));
+  expect(screen.getByLabelText("Test case 1 expected output")).toHaveValue("2");
   fireEvent.click(screen.getByRole("button", { name: "Update Question" }));
   await waitFor(() => expect(update).toHaveBeenCalledWith("question-1", expect.objectContaining({
-    examples: [{ input: "7", output: "15", explanation: "Double seven" }],
-    testCases: [expect.objectContaining({ input: "1", expectedOutput: "2", isHidden: true })],
+    testCases: [expect.objectContaining({ input: "1", expectedOutput: "2", isHidden: false })],
+    referenceSolutions: [{ language: "cpp", sourceCode: "int main() {}" }],
+    explanation: "Greedy on bits.",
   })));
-  fireEvent.click(screen.getByRole("button", { name: "Remove example 1" }));
-  fireEvent.click(screen.getByRole("button", { name: "Update Question" }));
-  await waitFor(() => expect(update).toHaveBeenLastCalledWith("question-1", expect.objectContaining({ examples: [], sampleExamples: [] })));
 });

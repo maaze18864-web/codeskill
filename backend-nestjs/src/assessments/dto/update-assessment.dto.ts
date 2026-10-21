@@ -8,9 +8,11 @@ import {
   IsEnum,
   Min,
   ValidateNested,
+  Matches,
 } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 import { AssessmentSectionDto } from './create-assessment.dto';
+import { normalizeSectionIdentifier } from '../../common/constants/sections.constant';
 
 class UpdateAssessmentProctoringDto {
   @IsString()
@@ -119,6 +121,17 @@ export class UpdateAssessmentDto {
   targetCourses?: string[];
 
   @IsArray()
+  @Transform(({ value }) => {
+    if (!Array.isArray(value)) return value;
+    const normalized = value
+      .map((sec) => normalizeSectionIdentifier(sec))
+      .filter(Boolean);
+    return [...new Set(normalized)];
+  })
+  @Matches(/^[A-Za-z0-9_\-]{1,16}$/, {
+    each: true,
+    message: 'Each targetSection must be a valid section identifier (e.g. A1, B4)',
+  })
   @IsString({ each: true })
   @IsOptional()
   targetSections?: string[];

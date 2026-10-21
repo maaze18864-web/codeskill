@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { KeyRound, AlertCircle, CheckCircle2, GraduationCap, Presentation, ShieldCheck } from "lucide-react";
+import { KeyRound, AlertCircle, CheckCircle2, ShieldCheck } from "lucide-react";
 
 import { useAuth } from "@/context/AuthContext";
 import { Spinner } from "@/components/ui/spinner";
@@ -31,27 +31,13 @@ const forcePasswordSchema = z
   });
 
 type ForcePasswordFormValues = z.infer<typeof forcePasswordSchema>;
-type LoginRole = "student" | "teacher" | "admin";
-
-const loginRoles: Array<{
-  id: LoginRole;
-  label: string;
-  description: string;
-  icon: typeof GraduationCap;
-}> = [
-  { id: "student", label: "Student", description: "Take assessments and build your coding profile.", icon: GraduationCap },
-  { id: "teacher", label: "Teacher", description: "Create learning content and review student progress.", icon: Presentation },
-  { id: "admin", label: "Admin", description: "Manage the institution and platform settings.", icon: ShieldCheck },
-];
 
 export default function AppLoginPage() {
   const [loading, setLoading] = useState(false);
   const [showForcePasswordModal, setShowForcePasswordModal] = useState(false);
   const [passwordChangeSuccess, setPasswordChangeSuccess] = useState(false);
-  const [loginRole, setLoginRole] = useState<LoginRole>("student");
-  const [roleError, setRoleError] = useState<string | null>(null);
 
-  const { login, logout, studentLogin, forceChangePassword } = useAuth();
+  const { login, forceChangePassword } = useAuth();
   const router = useRouter();
 
   const forceForm = useForm<ForcePasswordFormValues>({
@@ -60,36 +46,22 @@ export default function AppLoginPage() {
   });
 
   const handleLogin = async (data: LoginFormValues) => {
-    if (loginRole === "admin") {
-      router.push("/admin/login");
-      return;
-    }
-
     setLoading(true);
-    setRoleError(null);
     try {
       const input = data.email.trim();
       const res = await login({ email: input, password: data.password });
 
       const accountRole = String(res?.user?.role || "").toLowerCase();
       const isTeacher = Boolean(res?.user?.isTeacher) || ["teacher", "faculty", "instructor"].includes(accountRole);
-
-      if (loginRole === "teacher" && !isTeacher) {
-        const message = "This account is not enrolled as a teacher. Choose Student or contact your administrator.";
-        logout();
-        setRoleError(message);
-        return;
-      }
+      const isAdmin = Boolean(res?.user?.isAdmin) || accountRole === "admin" || accountRole === "superadmin";
 
       if (res?.user?.forcePasswordChange) {
         forceForm.setValue("currentPassword", data.password);
         setShowForcePasswordModal(true);
+      } else if (isAdmin) {
+        window.location.href = "/admin/dashboard";
       } else if (isTeacher) {
         window.location.href = "/teacher/dashboard";
-      } else if (res?.user?.isAdmin) {
-        window.location.href = "/admin/dashboard";
-      } else if (res?.user?.isAssessmentStudent) {
-        window.location.href = "/dashboard";
       } else {
         window.location.href = "/dashboard";
       }
@@ -107,7 +79,7 @@ export default function AppLoginPage() {
       });
       setPasswordChangeSuccess(true);
       setTimeout(() => {
-        router.push(loginRole === "teacher" ? "/teacher/dashboard" : "/dashboard");
+        router.push("/dashboard");
       }, 1500);
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : "Failed to update password. Please try again.";
@@ -134,84 +106,88 @@ export default function AppLoginPage() {
           }
         }}
       >
-        <div className="w-full max-w-[400px] flex flex-col gap-8 mx-auto">
-          <div className="flex flex-col">
-            <div className="w-24 h-24 bg-card border border-border rounded-2xl p-2.5 flex items-center justify-center mb-6 shadow-sm">
-              <img
-                src="/cu-logo.png"
-                alt="Logo"
-                className="w-full h-full object-contain"
-              />
-            </div>
-            <h2 className="text-2xl font-bold tracking-tight text-foreground mb-2">
-              Welcome back
-            </h2>
-            <p className="text-sm text-muted-foreground">
-              Please enter your credentials to access your account.
-            </p>
-          </div>
+        <div className="w-full max-w-[420px] flex flex-col gap-6 mx-auto px-4 sm:px-0">
+          {/* Unified Login Box */}
+          <div className="rounded-3xl border border-border/70 bg-card/60 backdrop-blur-sm p-6 sm:p-8 shadow-sm transition-all space-y-6">
+            {/* Dual Co-Branding Header: CodeSkill Logo | CU Logo */}
+            <div className="flex items-center justify-center gap-3 sm:gap-4 select-none pt-1">
+              {/* CodeSkill Logo + Wordmark */}
+              <Link
+                href="/"
+                className="inline-flex items-center gap-2.5 group transition-transform hover:scale-[1.02]"
+              >
+                <div className="relative w-11 h-11 sm:w-12 sm:h-12 rounded-2xl overflow-hidden border border-black/10 dark:border-white/15 shadow-xs flex items-center justify-center p-0.5 group-hover:scale-105 transition-transform duration-200">
+                  <img
+                    src="/icon.svg"
+                    alt="CodeSkill Logo"
+                    className="w-full h-full object-contain"
+                  />
+                </div>
+                <span className="font-bold text-2xl sm:text-[26px] tracking-tight leading-none text-foreground font-sans">
+                  CodeSkill
+                </span>
+              </Link>
 
-          <div className="rounded-2xl border border-border/80 bg-card/50 p-1.5 shadow-sm" aria-label="Choose a portal">
-            <div className="grid grid-cols-3 gap-1">
-              {loginRoles.map((option) => {
-                const Icon = option.icon;
-                const isSelected = loginRole === option.id;
-                return (
-                  <button
-                    key={option.id}
-                    type="button"
-                    onClick={() => {
-                      setLoginRole(option.id);
-                      setRoleError(null);
-                    }}
-                    className={`flex min-h-16 flex-col items-center justify-center gap-1 rounded-xl px-2 py-2 text-center transition-all ${isSelected ? "bg-primary text-primary-foreground shadow-md shadow-primary/20" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}
-                    aria-pressed={isSelected}
-                  >
-                    <Icon className="h-4 w-4" />
-                    <span className="text-xs font-semibold">{option.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+              {/* Divider */}
+              <div className="h-9 sm:h-11 w-[1px] bg-border/80 shrink-0" aria-hidden="true" />
 
-          <div className="rounded-xl border border-primary/15 bg-primary/[0.04] px-3.5 py-3 text-xs leading-relaxed text-muted-foreground">
-            <span className="font-semibold text-foreground">{loginRoles.find((option) => option.id === loginRole)?.label} portal:</span>{" "}
-            {loginRoles.find((option) => option.id === loginRole)?.description}
-          </div>
-
-          {roleError && (
-            <div role="alert" className="rounded-xl border border-destructive/30 bg-destructive/5 px-3.5 py-3 text-sm text-destructive">
-              {roleError}
-            </div>
-          )}
-
-          {loginRole === "admin" ? (
-            <div className="space-y-3 rounded-2xl border border-border bg-card/60 p-5 text-center">
-              <ShieldCheck className="mx-auto h-8 w-8 text-primary" />
-              <div>
-                <h3 className="font-semibold text-foreground">Administrator sign in</h3>
-                <p className="mt-1 text-xs leading-relaxed text-muted-foreground">Continue to the protected administrator sign-in with OTP verification.</p>
+              {/* Chandigarh University Logo (Enlarged) */}
+              <div
+                className="h-[52px] sm:h-[60px] px-3.5 py-1.5 rounded-2xl overflow-hidden bg-white border border-border/70 shadow-xs flex items-center justify-center shrink-0 transition-transform hover:scale-[1.02]"
+                title="Chandigarh University"
+              >
+                <img
+                  src="/cu-logo-tight.png"
+                  alt="Chandigarh University"
+                  className="h-full w-auto object-contain"
+                />
               </div>
-              <button type="button" onClick={() => router.push("/admin/login")} className="inline-flex h-11 w-full items-center justify-center rounded-xl bg-primary px-4 text-sm font-semibold text-primary-foreground shadow-md shadow-primary/20 transition hover:bg-primary/90">
-                Continue to Admin Login
-              </button>
             </div>
-          ) : (
+
+            <div className="space-y-1.5 text-center flex flex-col items-center">
+              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground text-center">
+                Welcome back
+              </h1>
+              <p className="text-sm text-muted-foreground leading-relaxed text-center max-w-xs sm:max-w-sm">
+                Sign in with your University UID or registered email to access your account.
+              </p>
+            </div>
+
             <LoginForm onSubmit={handleLogin} loading={loading} />
-          )}
+          </div>
 
-          <p className="text-center text-xs text-muted-foreground">
-            By signing in, you agree to our{" "}
-            <a href="#" className="underline hover:text-foreground transition-colors">Terms of Service</a>{" "}
-            and{" "}
-            <a href="#" className="underline hover:text-foreground transition-colors">Privacy Policy</a>.
-          </p>
+          {/* Footer & Administrative Link */}
+          <div className="flex flex-col gap-3 text-center">
+            <p className="text-xs text-muted-foreground">
+              By signing in, you agree to our{" "}
+              <a href="#" className="underline font-medium hover:text-foreground transition-colors">
+                Terms of Service
+              </a>{" "}
+              and{" "}
+              <a href="#" className="underline font-medium hover:text-foreground transition-colors">
+                Privacy Policy
+              </a>.
+            </p>
 
-          <div className="mt-4 pt-4 border-t border-border/50 text-center">
-            <Link href="/" className="text-xs font-semibold text-muted-foreground hover:text-foreground transition-colors">
-              &larr; Return to Home
-            </Link>
+            <div className="pt-2 border-t border-border/40 flex items-center justify-center gap-4 text-xs text-muted-foreground">
+              <Link
+                href="/"
+                className="group inline-flex items-center gap-1.5 font-medium hover:text-foreground transition-colors"
+              >
+                <span className="transition-transform group-hover:-translate-x-0.5">&larr;</span>
+                <span>Return to Home</span>
+              </Link>
+
+              <span className="text-border/80">•</span>
+
+              <Link
+                href="/admin/login"
+                className="inline-flex items-center gap-1.5 font-medium text-muted-foreground/80 hover:text-foreground transition-colors"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-muted-foreground" />
+                <span>Admin OTP</span>
+              </Link>
+            </div>
           </div>
         </div>
       </AuthUI>

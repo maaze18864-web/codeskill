@@ -113,19 +113,22 @@ describe('Assessment Slug and UUID Resolution (AUD-029)', () => {
     }
   });
 
-  it('retakes student attempt with slug exam-9227 using canonical UUID for attempt deletion', async () => {
+  it('retakes student attempt with slug exam-9227 using canonical UUID', async () => {
     const { service, attemptRepo } = setup();
     const studentUser = { id: 'student-uuid-1', role: 'student' };
 
     await service.retakeStudentAttempt(SLUG_CODE, studentUser);
 
-    expect(attemptRepo.delete).toHaveBeenCalledWith(
+    expect(attemptRepo.findOne).toHaveBeenCalledWith(
       expect.objectContaining({
-        assessmentId: CANONICAL_UUID,
-        studentId: 'student-uuid-1',
-        status: 'in_progress',
+        where: {
+          assessmentId: CANONICAL_UUID,
+          studentId: 'student-uuid-1',
+          status: 'in_progress',
+        },
       }),
     );
+    expect(attemptRepo.delete).not.toHaveBeenCalled();
   });
 
   it('saves progress for slug exam-9227 looking up attempt by canonical UUID', async () => {

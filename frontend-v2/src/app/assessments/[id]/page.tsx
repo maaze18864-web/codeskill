@@ -1,7 +1,38 @@
 "use client";
 
-import { useEffect, useRef, useState, use } from "react";
+import { useEffect, useRef, useState, use, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+
+function Countdown({
+  date,
+  onComplete,
+  renderer,
+}: {
+  date: number;
+  onComplete?: () => void;
+  renderer: (props: { days: number; hours: number; minutes: number; seconds: number; completed: boolean }) => ReactNode;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const current = Date.now();
+      setNow(current);
+      if (current >= date) {
+        onComplete?.();
+      }
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [date, onComplete]);
+
+  const diff = Math.max(0, date - now);
+  const completed = diff <= 0;
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+  const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+
+  return <>{renderer({ days, hours, minutes, seconds, completed })}</>;
+}
 import Link from "next/link";
 import {
   Clock,
@@ -20,6 +51,7 @@ import {
 } from "lucide-react";
 import { studentAssessmentsAPI } from "@/config/api";
 import { useAuth } from "@/context/AuthContext";
+import { formatAssessmentTimeLeft } from "@/lib/assessment-cards";
 import { handoffAssessmentStream, releaseAssessmentStream, setPreferredAssessmentCamera } from "@/lib/assessment-media-session";
 import {
   clearAssessmentFaceReference,
@@ -27,6 +59,7 @@ import {
   getAssessmentFaceReference,
   setAssessmentFaceReference,
 } from "@/lib/assessment-face-verification";
+import { formatAssessmentDateTime, getAssessmentScheduleState } from "@/lib/assessment-schedule";
 
 export default function AssessmentBriefingPage({
   params,
@@ -36,12 +69,18 @@ export default function AssessmentBriefingPage({
   const resolvedParams = use(params);
   const id = resolvedParams.id;
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+  const isSignedIn = Boolean(user);
+  const userKey = user?.id || user?._id || user?.uid;
 
   const [data, setData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<{ status?: number; message: string } | null>(null);
+  const [loadRetry, setLoadRetry] = useState(0);
+  const [scheduleNow, setScheduleNow] = useState(() => Date.now());
   const [agreedToRules, setAgreedToRules] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
+  const [now, setNow] = useState(Date.now);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
   const [cameraDevices, setCameraDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedCamera, setSelectedCamera] = useState("");
@@ -60,6 +99,11 @@ export default function AssessmentBriefingPage({
   useEffect(() => {
     clearAssessmentFaceReference(id);
   }, [id]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (cameraPreviewRef.current) cameraPreviewRef.current.srcObject = cameraStream;
@@ -116,16 +160,27 @@ export default function AssessmentBriefingPage({
   };
 
   useEffect(() => {
+    if (authLoading) return;
+    if (!isSignedIn) {
+      setIsLoading(false);
+      setData(null);
+      return;
+    }
+    let active = true;
     const fetchOverview = async () => {
       setIsLoading(true);
+      setData(null);
+      setLoadError(null);
       try {
         const res = await studentAssessmentsAPI.getOverview(id);
+        if (!active) return;
         const nextData = res.data as {
           assessment?: Record<string, unknown> | null;
           attempt?: { status?: string } | null;
           canRetake?: boolean;
           completedAttemptsCount?: number;
         };
+        if (!nextData.assessment) throw new Error("Invalid assessment response");
         setData(nextData);
         // Only redirect to result if student finished and cannot retake
         if (
@@ -134,35 +189,70 @@ export default function AssessmentBriefingPage({
         ) {
           router.replace(`/assessments/${id}/result`);
         }
-      } catch (err) {
-        console.error("Failed to load assessment overview:", err);
+      } catch (err: unknown) {
+        if (!active) return;
+        const status = (err as { response?: { status?: number } }).response?.status;
+        setLoadError({ status, message: status === 404
+          ? "This assessment link is no longer available. Check the link with your instructor."
+          : status === 403
+            ? "This assessment is not assigned to your account. Ask your instructor to check your batch or semester."
+            : status === 401
+              ? "Your session has expired. Sign in again to open this assessment."
+              : "We couldn’t load this assessment. Please try again. If this continues, contact your instructor." });
       } finally {
-        setIsLoading(false);
+        if (active) setIsLoading(false);
       }
     };
 
-    fetchOverview();
-  }, [id, router]);
+    void fetchOverview();
+    return () => { active = false; };
+  }, [id, router, authLoading, isSignedIn, userKey, loadRetry]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setScheduleNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const assessment = data?.assessment;
+  const activeAttempt = data?.attempt?.status === "in_progress";
+  const resumesLeft = data?.attempt?.resumeAttemptsRemaining ?? 3;
+  const resumeExpired = Boolean(activeAttempt && data?.attempt?.attemptExpiresAt && new Date(data.attempt.attemptExpiresAt).getTime() <= now);
+  const resumeUnavailable = activeAttempt && (resumesLeft <= 0 || resumeExpired);
+  const scheduleState = assessment
+    ? getAssessmentScheduleState(assessment.startTime, assessment.endTime, scheduleNow)
+    : "invalid";
+  const countdownTarget = scheduleState === "upcoming" && assessment?.startTime
+    ? new Date(assessment.startTime).getTime()
+    : scheduleState === "live" && assessment?.endTime
+      ? new Date(assessment.endTime).getTime()
+      : null;
+  const countdownLabel = scheduleState === "upcoming" ? "Assessment opens in" : "Assessment closes in";
+  const canStartInWindow = scheduleState === "live" && assessment?.isAvailable !== false;
+
+  const previousScheduleState = useRef(scheduleState);
+  useEffect(() => {
+    const previousState = previousScheduleState.current;
+    previousScheduleState.current = scheduleState;
+    if (!((previousState === "upcoming" && scheduleState === "live") || (previousState === "live" && scheduleState === "expired"))) return;
+
+    // Re-check eligibility at the scheduled opening time so the Begin button
+    // reflects the server's current attempt and cohort rules without a reload.
+    let active = true;
+    void studentAssessmentsAPI.getOverview(id)
+      .then((response) => { if (active) setData(response.data); })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [id, scheduleState]);
 
   const handleStartExam = async () => {
+    if (!canStartInWindow) return;
     const cameraRequired = assessment?.proctoring?.useCamera !== false;
-    if (!agreedToRules || (cameraRequired && (!cameraStreamRef.current || !getAssessmentFaceReference(id)))) return;
+    if (!agreedToRules || resumeUnavailable || (cameraRequired && (!cameraStreamRef.current || !getAssessmentFaceReference(id)))) return;
     setIsStarting(true);
 
     const attemptToken = Date.now();
-
-    // If re-attempting after completing, ensure fresh attempt is initialized
-    if (data?.completedAttemptsCount > 0 && data?.attempt?.status !== "in_progress") {
-      try {
-        await studentAssessmentsAPI.retakeAttempt(id);
-      } catch (e) {
-        console.error("Retake attempt error:", e);
-      }
-    }
-
-    router.push(`/assessments/${id}/take?attempt=${attemptToken}`);
+    const retake = data?.completedAttemptsCount > 0 && !activeAttempt;
+    router.push(`/assessments/${id}/take?attempt=${attemptToken}${retake ? "&retake=1" : ""}`);
   };
 
 
@@ -195,7 +285,7 @@ export default function AssessmentBriefingPage({
     }
   };
 
-  if (isLoading) {
+  if (authLoading || isLoading) {
     return (
       <div className="flex-1 min-h-screen bg-background flex items-center justify-center font-sans">
         <div className="text-center space-y-2">
@@ -211,10 +301,9 @@ export default function AssessmentBriefingPage({
       <div className="flex-1 min-h-screen bg-background flex items-center justify-center font-sans p-6">
         <div className="text-center space-y-4 max-w-sm">
           <AlertTriangle className="w-10 h-10 text-amber-500 mx-auto" />
-          <h2 className="text-lg font-bold text-foreground">Assessment Not Found</h2>
-          <p className="text-xs text-muted-foreground">
-            This assessment does not exist or you may not have permission to view it.
-          </p>
+          <h2 className="text-lg font-bold text-foreground">{!isSignedIn || loadError?.status === 401 ? "Sign in to continue" : loadError?.status === 404 ? "Assessment Not Found" : loadError?.status === 403 ? "Assessment not assigned" : "Assessment couldn’t be loaded"}</h2>
+          <p role="alert" className="text-sm text-muted-foreground">{!isSignedIn ? "Sign in with your student account to open this assessment." : loadError?.message}</p>
+          {(!isSignedIn || loadError?.status === 401) ? <Link href="/login" className="inline-flex px-4 py-2 rounded-lg bg-primary text-primary-foreground font-semibold">Sign in</Link> : loadError?.status !== 404 && loadError?.status !== 403 ? <button type="button" onClick={() => setLoadRetry(value => value + 1)} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground font-semibold"><RefreshCw className="w-4 h-4" />Try again</button> : null}
           <Link
             href="/assessments"
             className="inline-flex items-center gap-2 px-4 py-2 bg-amber-500 text-zinc-950 font-semibold rounded-xl text-xs hover:bg-amber-600 transition-colors"
@@ -257,19 +346,19 @@ export default function AssessmentBriefingPage({
             </div>
           </div>
 
-          <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-2 mb-2">
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-[minmax(0,1fr)_220px] md:items-start">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2 mb-2">
                 <span className="px-2.5 py-0.5 rounded text-xs font-mono font-bold bg-muted text-foreground border border-border">
                   {assessment.code}
                 </span>
-                {assessment.isAvailable !== false ? (
+                {canStartInWindow ? (
                   <span className="px-2.5 py-0.5 rounded text-xs font-semibold bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20 flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 dark:bg-emerald-400 animate-pulse" /> Available Now
                   </span>
                 ) : (
                   <span className="px-2.5 py-0.5 rounded text-xs font-semibold bg-rose-500/10 text-rose-700 dark:text-rose-300 border border-rose-500/20">
-                    {assessment.unavailabilityReason || "Currently Closed"}
+                    {scheduleState === "upcoming" ? "Upcoming" : scheduleState === "expired" ? "Assessment Closed" : assessment.unavailabilityReason || "Currently Closed"}
                   </span>
                 )}
                 <span className="px-2.5 py-0.5 rounded text-xs font-semibold bg-muted text-foreground border border-border">
@@ -290,13 +379,57 @@ export default function AssessmentBriefingPage({
               )}
             </div>
 
-            {user?.uid && (
-              <div className="bg-muted/50 border border-border px-4 py-2.5 rounded-md text-left sm:text-right shrink-0">
-                <span className="text-[10px] uppercase font-bold text-muted-foreground">Candidate</span>
-                <div className="text-xs font-bold text-foreground mt-0.5">{user.name}</div>
-                <div className="text-[11px] font-mono text-primary font-semibold">{user.uid}</div>
-              </div>
-            )}
+            <aside className="space-y-3">
+              {user?.uid && (
+                <div className="rounded-xl border border-border bg-muted/40 px-4 py-3 text-left md:text-right">
+                  <span className="text-[10px] uppercase font-bold tracking-wide text-muted-foreground">Candidate</span>
+                  <div className="mt-1 text-sm font-bold text-foreground">{user.name}</div>
+                  <div className="text-xs font-mono text-primary font-semibold">{user.uid}</div>
+                </div>
+              )}
+
+              <section aria-label="Assessment schedule countdown" className={`rounded-xl border p-4 ${scheduleState === "expired" ? "border-rose-500/25 bg-rose-500/5" : scheduleState === "upcoming" ? "border-amber-500/25 bg-amber-500/5" : "border-primary/20 bg-primary/5"}`}>
+                <div className="flex items-center gap-2 text-primary">
+                  <Clock className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-foreground">
+                    {scheduleState === "expired" ? "Assessment window" : countdownTarget ? countdownLabel : "Attempt duration"}
+                  </p>
+                </div>
+                {countdownTarget ? (
+                  <Countdown
+                    date={countdownTarget}
+                    onComplete={() => setScheduleNow(Date.now())}
+                    renderer={({ days, hours, minutes, seconds, completed }) => completed ? (
+                      <p className="mt-3 text-sm font-bold text-rose-600 dark:text-rose-400">Updating schedule…</p>
+                    ) : (
+                      <div className="mt-3 grid grid-cols-4 gap-1.5" role="timer" aria-live="off">
+                        {[{ value: days, unit: "days" }, { value: hours, unit: "hrs" }, { value: minutes, unit: "min" }, { value: seconds, unit: "sec" }].map(({ value, unit }) => (
+                          <div key={unit} className="min-w-0 rounded-lg border border-border/70 bg-background px-1 py-2 text-center">
+                            <div className="font-mono text-base font-bold tabular-nums text-foreground">{String(value).padStart(2, "0")}</div>
+                            <div className="mt-0.5 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">{unit}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  />
+                ) : (
+                  <p className={`mt-3 text-sm font-bold ${scheduleState === "expired" ? "text-rose-600 dark:text-rose-400" : "text-foreground"}`}>
+                    {scheduleState === "expired" ? "Closed" : scheduleState === "invalid" ? "Schedule unavailable" : `${assessment.durationMinutes} minutes`}
+                  </p>
+                )}
+                <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+                  {scheduleState === "upcoming" && assessment.startTime
+                    ? `Opens ${formatAssessmentDateTime(assessment.startTime, "D MMM, h:mm A")}. The attempt timer starts after you begin.`
+                    : scheduleState === "expired"
+                      ? "The scheduled assessment window has ended."
+                      : scheduleState === "invalid"
+                        ? "The assessment schedule could not be read. Refresh the page or contact your administrator."
+                        : assessment.endTime
+                          ? `Scheduled end: ${formatAssessmentDateTime(assessment.endTime, "D MMM, h:mm A")}. Your attempt also has its own ${assessment.durationMinutes}-minute timer.`
+                          : "No scheduled closing time. Your per-attempt timer starts when you begin."}
+                </p>
+              </section>
+            </aside>
           </div>
 
           {/* Timing Window Banner (If configured by Admin) */}
@@ -306,9 +439,9 @@ export default function AssessmentBriefingPage({
                 <Clock className="w-4 h-4 text-primary" />
                 <span className="font-semibold text-foreground">Scheduled Window:</span>
                 <span>
-                  {assessment.startTime ? new Date(assessment.startTime).toLocaleString([], { dateStyle: "short", timeStyle: "short" }) : "Immediate"}
+                  {assessment.startTime ? formatAssessmentDateTime(assessment.startTime, "D MMM YYYY, h:mm A") : "Immediate"}
                   {" — "}
-                  {assessment.endTime ? new Date(assessment.endTime).toLocaleString([], { dateStyle: "short", timeStyle: "short" }) : "No Expiry"}
+                  {assessment.endTime ? formatAssessmentDateTime(assessment.endTime, "D MMM YYYY, h:mm A") : "No Expiry"}
                 </span>
               </div>
               {assessment.unavailabilityReason && (
@@ -469,6 +602,11 @@ export default function AssessmentBriefingPage({
             </div>
           )}
 
+          {activeAttempt && <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-muted/40 px-4 py-3 text-sm">
+            <span className="inline-flex items-center gap-2 text-muted-foreground"><Clock className="h-4 w-4 text-primary" />Time left <strong className="font-mono text-foreground">{formatAssessmentTimeLeft(data.attempt.attemptExpiresAt, now)}</strong></span>
+            <span className="text-muted-foreground">Resumes left <strong className="font-mono text-foreground">{resumesLeft} / {data.attempt.maxResumeAttempts ?? 3}</strong></span>
+          </div>}
+
           {/* Start Action / Scorecard Redirect */}
           {data?.attempt?.status === "submitted" && data?.canRetake === false ? (
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2">
@@ -486,7 +624,9 @@ export default function AssessmentBriefingPage({
           ) : (
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2">
               <span className="text-xs text-muted-foreground">
-                {assessment.isAvailable === false
+                {resumeUnavailable
+                  ? resumeExpired ? "This attempt has run out of time." : "All three resume opportunities have been used."
+                  : !canStartInWindow
                   ? "This assessment is currently not accepting new attempts."
                   : data?.completedAttemptsCount > 0
                     ? "Starting a new attempt will allow you to improve your score. The highest score is permanently saved."
@@ -495,15 +635,19 @@ export default function AssessmentBriefingPage({
 
               <button
                 onClick={handleStartExam}
-                disabled={!agreedToRules || (assessment.proctoring?.useCamera !== false && (!cameraStream || !selfieCaptured || isCheckingMedia || isCapturingSelfie)) || isStarting || assessment.isAvailable === false}
+                disabled={!agreedToRules || resumeUnavailable || (assessment.proctoring?.useCamera !== false && (!cameraStream || !selfieCaptured || isCheckingMedia || isCapturingSelfie)) || isStarting || !canStartInWindow}
                 className="inline-flex items-center justify-center gap-2 px-6 py-2.5 bg-primary hover:bg-primary/90 active:bg-primary/80 text-white font-semibold rounded-md text-xs sm:text-sm uppercase tracking-wider transition-all shadow-xs disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <Maximize2 className="w-4 h-4" />
                 {isStarting
                   ? "Launching Exam..."
-                  : assessment.isAvailable === false
-                    ? "Assessment Closed"
-                    : "Begin Assessment"}
+                  : resumeExpired
+                    ? "Time Expired"
+                    : resumeUnavailable
+                    ? "Resume Limit Reached"
+                    : !canStartInWindow
+                      ? scheduleState === "upcoming" ? "Not Yet Available" : "Assessment Closed"
+                      : activeAttempt ? "Resume Assessment" : "Begin Assessment"}
               </button>
             </div>
           )}

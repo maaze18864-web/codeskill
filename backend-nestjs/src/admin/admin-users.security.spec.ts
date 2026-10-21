@@ -14,6 +14,7 @@ describe('Admin User Role Security (AUD-020 & X-06)', () => {
     findOne: jest.fn(),
     count: jest.fn(),
     save: jest.fn(),
+    create: jest.fn((dto) => ({ ...dto, id: 'created-uuid' })),
   };
 
   const mockTokenService = {
@@ -188,5 +189,78 @@ describe('Admin User Role Security (AUD-020 & X-06)', () => {
     expect(savedUser.role).toBe('student');
     expect(savedUser.isAdmin).toBe(false);
     expect(mockTokenService.invalidateUserSessions).toHaveBeenCalledWith('other-admin-uuid');
+  });
+
+  describe('createAdminUser', () => {
+    it('rejects regular admin attempting to create an admin user', async () => {
+      await expect(
+        adminService.createAdminUser(
+          {
+            name: 'New Admin',
+            email: 'newadmin@test.com',
+            password: 'StrongPassword123!',
+            role: 'admin',
+          },
+          regularAdminActor,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('rejects passwords failing security policy', async () => {
+      await expect(
+        adminService.createAdminUser(
+          {
+            name: 'New Admin',
+            email: 'newadmin@test.com',
+            password: 'password123', // common password
+            role: 'admin',
+          },
+          superAdminActor,
+        ),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects creating an admin when email is already registered', async () => {
+      mockUserRepo.findOne.mockResolvedValue({ id: 'existing-id', email: 'existing@test.com' });
+
+      await expect(
+        adminService.createAdminUser(
+          {
+            name: 'New Admin',
+            email: 'existing@test.com',
+            password: 'StrongPassword123!',
+            role: 'admin',
+          },
+          superAdminActor,
+        ),
+      ).rejects.toThrow('A user with this email already exists');
+    });
+
+    it('creates an admin successfully when called by super_admin', async () => {
+      mockUserRepo.findOne.mockResolvedValue(null);
+
+      const result = await adminService.createAdminUser(
+        {
+          name: 'New Admin',
+          email: 'validadmin@test.com',
+          password: 'StrongPassword123!',
+          role: 'admin',
+        },
+        superAdminActor,
+      );
+
+      expect(mockUserRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: 'New Admin',
+          email: 'validadmin@test.com',
+          role: 'admin',
+          isAdmin: true,
+          isActive: true,
+        }),
+      );
+      expect(mockUserRepo.save).toHaveBeenCalled();
+      expect(result._id).toBe('created-uuid');
+      expect((result as any).password).toBeUndefined();
+    });
   });
 });

@@ -33,7 +33,7 @@ export class Contest {
   problems: string[];
 
   @Column({ type: 'varchar', length: 20, default: 'coding' })
-  format: string;
+  contestFormat: string;
 
   @Column({ default: false })
   isPrivate: boolean;

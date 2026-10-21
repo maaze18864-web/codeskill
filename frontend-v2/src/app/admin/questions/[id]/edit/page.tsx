@@ -24,7 +24,6 @@ import InputOutputFormat from "../../create/_components/InputOutputFormat";
 import StarterCode from "../../create/_components/StarterCode";
 import ReferenceSolution from "../../create/_components/ReferenceSolution";
 import TestCases from "../../create/_components/TestCases";
-import SampleExamples from "../../create/_components/SampleExamples";
 import CustomChecker from "../../create/_components/CustomChecker";
 import SolutionExplanation from "../../create/_components/SolutionExplanation";
 import AIAssistance from "../../create/_components/AIAssistance";
@@ -103,7 +102,6 @@ function EditQuestionContent() {
         { id: "statement", label: "Statement", icon: FileText },
         { id: "constraints", label: "Constraints", icon: AlertTriangle },
         { id: "io-format", label: "I/O Format", icon: ArrowRightLeft },
-        { id: "sample-examples", label: "Examples", icon: BookOpen },
         { id: "starter-code", label: "Starter Code", icon: LayoutTemplate },
         { id: "reference-solution", label: "Reference", icon: Shield },
         { id: "test-cases", label: "Test Cases", icon: Database },
@@ -185,7 +183,7 @@ function EditQuestionContent() {
             constraints: constraintsString,
           },
           solutionExplanation: {
-            content: data.explanation || "",
+            content: data.explanation || data.metadata?.solutionExplanation || "",
             timeComplexity: data.metadata?.timeComplexity || "",
             spaceComplexity: data.metadata?.spaceComplexity || "",
           },
@@ -357,7 +355,9 @@ function EditQuestionContent() {
         constraints: formattedConstraints,
         inputFormat: store.statement.inputFormat,
         outputFormat: store.statement.outputFormat,
-        examples: store.sampleExamples
+        // Public test cases double as the sample examples shown to candidates.
+        examples: store.testCases
+          .filter((tc) => !tc.isHidden)
           .map((tc) => ({
             input: tc.input,
             output: tc.output,
@@ -391,7 +391,8 @@ function EditQuestionContent() {
           ...store.statement,
           constraints: formattedConstraints,
         },
-        sampleExamples: store.sampleExamples
+        sampleExamples: store.testCases
+          .filter((tc) => !tc.isHidden)
           .map((tc) => ({
             input: tc.input,
             output: tc.output,
@@ -565,7 +566,6 @@ function EditQuestionContent() {
                   <ProblemStatement />
                   <Constraints />
                   <InputOutputFormat />
-                  <SampleExamples />
                   <StarterCode />
                   <ReferenceSolution />
                   <TestCases />

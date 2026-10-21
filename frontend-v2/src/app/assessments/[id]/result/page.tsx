@@ -161,7 +161,11 @@ export default function AssessmentResultPage({
       index: idx + 1,
       title: q.question ? (q.question.length > 55 ? q.question.substring(0, 52) + "..." : q.question) : `Problem ${idx + 1}`,
       difficulty: (q.difficulty || "Medium") as "Easy" | "Medium" | "Hard",
-      status: q.isCorrect ? "Solved" : q.selectedAnswer >= 0 ? "Wrong Answer" : "Not Attempted",
+      status: q.isCorrect
+        ? "Solved"
+        : (Array.isArray(q.selectedAnswers) ? q.selectedAnswers.length > 0 : q.selectedAnswer >= 0)
+          ? "Wrong Answer"
+          : "Not Attempted",
       score: q.marksAwarded || 0,
       maxScore: q.marks || 10,
       timeTaken: "2m 15s",
@@ -441,8 +445,12 @@ export default function AssessmentResultPage({
                           typeof optItem === "string"
                             ? optItem
                             : optItem?.text || String(optItem || "");
-                        const isStudentChoice = q.selectedAnswer === optIdx;
-                        const isCorrectOption = q.correctAnswer === optIdx;
+                        const isStudentChoice = Array.isArray(q.selectedAnswers)
+                          ? q.selectedAnswers.includes(optIdx)
+                          : q.selectedAnswer === optIdx;
+                        const isCorrectOption = Array.isArray(q.correctAnswers)
+                          ? q.correctAnswers.includes(optIdx)
+                          : q.correctAnswer === optIdx;
                         const letter = String.fromCharCode(65 + optIdx);
 
                         let optStyle = "border-border bg-muted/20 text-muted-foreground";

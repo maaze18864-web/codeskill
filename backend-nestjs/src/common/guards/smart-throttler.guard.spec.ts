@@ -177,6 +177,20 @@ describe('SmartThrottlerGuard', () => {
       const tracker = await (guard as any).getTracker(req);
       expect(tracker).toBe('ip:198.51.100.77');
     });
+
+    it('rejects spoofed X-Forwarded-For headers and resolves true client IP from proxy chain (ISSUE-SEC-003)', async () => {
+      // Attacker sends spoofed IP 1.2.3.4; ALB appends real client IP 203.0.113.88
+      const req: any = {
+        headers: {
+          'x-forwarded-for': '1.2.3.4, 203.0.113.88, 10.0.1.5',
+        },
+        ip: '10.0.1.5',
+      };
+
+      const tracker = await (guard as any).getTracker(req);
+      expect(tracker).toBe('ip:203.0.113.88');
+      expect(tracker).not.toBe('ip:1.2.3.4');
+    });
   });
 
   describe('shouldSkip', () => {

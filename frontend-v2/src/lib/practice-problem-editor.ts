@@ -112,14 +112,27 @@ export function practiceDraft(
     explanation: tc.explanation ?? "",
     weight: tc.weight ?? 1,
   }));
-  const sampleExamples = (record.statement?.samples ?? record.examples ?? [])
-    .filter((example) => example.isHidden !== true)
-    .map((example, index) => ({
-      id: `example-${index}`,
+  // Legacy examples become public cases, but an explicitly hidden case stays hidden.
+  for (const example of record.examples ?? record.statement?.samples ?? []) {
+    const existing = testCases.find(
+      (tc) =>
+        tc.input === (example.input ?? "") &&
+        (tc.isHidden || tc.output === (example.output ?? "")),
+    );
+    if (existing) {
+      if (!existing.isHidden && !existing.explanation)
+        existing.explanation = example.explanation ?? "";
+      continue;
+    }
+    testCases.push({
+      id: `sample-${testCases.length}`,
       input: example.input ?? "",
       output: example.output ?? "",
+      isHidden: false,
       explanation: example.explanation ?? "",
-    }));
+      weight: 1,
+    });
+  }
   const title = record.title ?? record.question ?? "";
   const slug =
     record.slug ||
@@ -181,7 +194,6 @@ export function practiceDraft(
         record.referenceSolution,
     ),
     testCases,
-    sampleExamples,
   };
 }
 
@@ -241,11 +253,13 @@ export function practicePayload(
     statement: { ...state.statement },
     starterCode: { ...state.starterCode },
     referenceSolution: { ...state.referenceSolution },
-    sampleExamples: state.sampleExamples.map(({ input, output, explanation }) => ({
-      input,
-      output,
-      explanation,
-    })),
+    sampleExamples: state.testCases
+      .filter((tc) => !tc.isHidden)
+      .map(({ input, output, explanation }) => ({
+        input,
+        output,
+        explanation,
+      })),
     testCases: {
       cases: state.testCases.map(
         ({ input, output, isHidden, explanation, weight }) => ({

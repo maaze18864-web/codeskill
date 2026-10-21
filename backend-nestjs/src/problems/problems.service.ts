@@ -303,14 +303,21 @@ export class ProblemsService {
     );
   }
 
-  /** Only separately authored examples belong in the statement panel. */
-  private publicExamples(examples: unknown) {
-    return cases(examples)
-      .filter((example) => !example.isHidden)
+  /**
+   * Left-panel examples. When no explicit examples were authored, the public
+   * (non-hidden) test cases become the sample examples shown to candidates.
+   */
+  private samplesOrPublicCases(examples: unknown, testCases: unknown) {
+    const authored = cases(examples).map(
+      ({ input, output, explanation }) => ({ input, output, explanation }),
+    );
+    if (authored.length > 0) return authored;
+    return cases(testCases)
+      .filter((test) => !test.isHidden)
       .map(({ input, output, explanation }) => ({
         input,
         output,
-        explanation,
+        explanation: explanation || '',
       }));
   }
 
@@ -340,7 +347,10 @@ export class ProblemsService {
         throw new NotFoundException('Problem not found');
       const statement = metadata.statement;
       const config = metadata.config;
-      const samples = this.publicExamples(statement?.samples);
+      const samples = this.samplesOrPublicCases(
+        statement?.samples,
+        metadata.testCases?.cases,
+      );
       return {
         data: {
           ...this.summary(metadata),
@@ -384,7 +394,10 @@ export class ProblemsService {
         (await this.hasMetadataCounterpart(question))
       )
         throw new NotFoundException('Problem not found');
-      const samples = this.publicExamples(question.examples);
+      const samples = this.samplesOrPublicCases(
+        question.examples,
+        question.testCases,
+      );
       return {
         data: {
           id: question.id,
@@ -429,7 +442,10 @@ export class ProblemsService {
       (await this.hasBankCounterpart(problem))
     )
       throw new NotFoundException('Problem not found');
-    const samples = this.publicExamples(problem.examples);
+    const samples = this.samplesOrPublicCases(
+      problem.examples,
+      problem.testCases,
+    );
     return {
       data: {
         ...this.summary(problem),

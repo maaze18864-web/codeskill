@@ -19,7 +19,6 @@ import { Spinner } from "@/components/ui/spinner";
 import Link from "next/link";
 import { AuthUI } from "@/components/ui/auth-ui";
 import { OtpInput, type OtpInputHandle, type OtpStatus } from "@/components/ui/otp-input";
-import { AdminLogo } from "@/components/admin/AdminLogo";
 
 const adminLoginSchema = z.object({
   email: z.string().min(1, { message: "Please enter your administrator email or ID." }),
@@ -103,39 +102,54 @@ export default function AdminLoginPage() {
           }
         }}
       >
-        <div className="w-full max-w-md flex flex-col gap-6 mx-auto">
-          <div className="flex flex-col items-center text-center">
-            {/* Prominent CodeSkill Admin Branding */}
-            <div className="flex flex-col items-center text-center gap-3 mb-6">
-              <AdminLogo variant="icon" size="lg" />
-              <div className="flex flex-col items-center text-center">
-                <div className="flex items-center justify-center gap-2">
-                  <span className="text-2xl font-black tracking-tight text-foreground leading-none">
-                    Code<span className="text-rose-600 dark:text-rose-500">Skill</span>
-                  </span>
-                  <span className="px-2 py-0.5 text-xs font-bold uppercase tracking-wider bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/25 rounded-md leading-none shadow-xs">
-                    Admin
-                  </span>
+        <div className="w-full max-w-[420px] flex flex-col gap-6 mx-auto px-4 sm:px-0">
+          {/* Admin Login Box */}
+          <div className="rounded-3xl border border-border/70 bg-card/60 backdrop-blur-sm p-6 sm:p-8 shadow-sm transition-all space-y-6">
+            {/* Dual Co-Branding Header: CodeSkill Admin Logo | CU Logo */}
+            <div className="flex items-center justify-center gap-3 sm:gap-4 select-none pt-1">
+              {/* CodeSkill Logo + Wordmark */}
+              <Link
+                href="/"
+                className="inline-flex items-center gap-2.5 group transition-transform hover:scale-[1.02]"
+              >
+                <div className="relative w-11 h-11 sm:w-12 sm:h-12 rounded-2xl overflow-hidden border border-black/10 dark:border-white/15 shadow-xs flex items-center justify-center p-0.5 group-hover:scale-105 transition-transform duration-200">
+                  <img
+                    src="/icon.svg"
+                    alt="CodeSkill Logo"
+                    className="w-full h-full object-contain"
+                  />
                 </div>
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mt-1.5 text-center">
-                  Chandigarh University
-                </p>
+                <span className="font-bold text-2xl sm:text-[26px] tracking-tight leading-none text-foreground font-sans">
+                  CodeSkill
+                </span>
+              </Link>
+
+              {/* Divider */}
+              <div className="h-9 sm:h-11 w-[1px] bg-border/80 shrink-0" aria-hidden="true" />
+
+              {/* Chandigarh University Logo (Enlarged) */}
+              <div
+                className="h-[52px] sm:h-[60px] px-3.5 py-1.5 rounded-2xl overflow-hidden bg-white border border-border/70 shadow-xs flex items-center justify-center shrink-0 transition-transform hover:scale-[1.02]"
+                title="Chandigarh University"
+              >
+                <img
+                  src="/cu-logo-tight.png"
+                  alt="Chandigarh University"
+                  className="h-full w-auto object-contain"
+                />
               </div>
             </div>
 
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-300 text-[10px] font-bold tracking-widest uppercase mb-3 mx-auto">
-              <ShieldCheck className="w-3.5 h-3.5 text-[#F5B800]" />
-              {showOTP ? "Two-Factor Verification" : "Secure Examination Console"}
+            <div className="space-y-1.5 text-center flex flex-col items-center">
+              <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground text-center">
+                {showOTP ? "Verify Your Identity" : "Admin Sign In"}
+              </h1>
+              <p className="text-sm text-muted-foreground leading-relaxed text-center max-w-xs sm:max-w-sm">
+                {showOTP
+                  ? `Enter the 6-digit security code sent to ${form.getValues("email") || "your administrator email"}.`
+                  : "Sign in to access the examination and assessment administration console."}
+              </p>
             </div>
-            <h2 className="text-2xl font-bold tracking-tight text-foreground mb-1.5 text-center">
-              {showOTP ? "Verify Your Identity" : "Administrator Sign In"}
-            </h2>
-            <p className="text-sm text-muted-foreground text-center">
-              {showOTP
-                ? `Enter the 6-digit security code sent to ${form.getValues("email") || "your administrator email"}.`
-                : "Sign in to access the examination and assessment administration console."}
-            </p>
-          </div>
 
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5 text-left">
             {form.formState.errors.root && (
@@ -296,19 +310,34 @@ export default function AdminLoginPage() {
               </button>
             </div>
           </form>
-          
-          <div className="mt-8 pt-6 border-t border-border flex flex-col items-center gap-4">
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <ShieldCheck className="w-4 h-4" />
-              <p className="text-[11px] font-semibold">
-                Authorized faculty and examination controllers only.
-              </p>
-            </div>
-            <Link href="/" className="text-xs font-bold text-muted-foreground hover:text-foreground transition-colors">
-              Return to Portal Home
+        </div>
+
+        {/* Footer & Standard Link */}
+        <div className="flex flex-col gap-3 text-center">
+          <p className="text-xs text-muted-foreground">
+            Authorized faculty and examination controllers only.
+          </p>
+
+          <div className="pt-2 border-t border-border/40 flex items-center justify-center gap-4 text-xs text-muted-foreground">
+            <Link
+              href="/"
+              className="group inline-flex items-center gap-1.5 font-medium hover:text-foreground transition-colors"
+            >
+              <span className="transition-transform group-hover:-translate-x-0.5">&larr;</span>
+              <span>Return to Home</span>
+            </Link>
+
+            <span className="text-border/80">•</span>
+
+            <Link
+              href="/login"
+              className="inline-flex items-center gap-1.5 font-medium text-muted-foreground/80 hover:text-foreground transition-colors"
+            >
+              <span>Standard Sign In</span>
             </Link>
           </div>
         </div>
+      </div>
       </AuthUI>
     </>
   );

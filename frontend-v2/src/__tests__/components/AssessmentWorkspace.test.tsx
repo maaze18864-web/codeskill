@@ -25,7 +25,6 @@ jest.mock("@/components/assessment/SafeExamBrowser", () => ({ children, onFullsc
 const questions = [
   { _id: "mcq", question: "Choose the keyword", questionType: "MCQ", topic: "Basics", options: ["const", "other"], marks: 1 },
   { _id: "coding", question: "Echo the input", questionType: "coding", topic: "Strings", language: "python", starterCode: 'print(input())', options: [], marks: 5,
-    examples: [{ input: "authored-example", output: "authored-example", explanation: "Echo this example" }],
     testCases: [{ input: "hello", expected: "hello" }, { input: "secret", expected: "secret", isHidden: true }] },
   { _id: "last", question: "Choose the output", questionType: "MCQ", options: ["one", "two"], marks: 1 },
 ];
@@ -44,21 +43,6 @@ beforeEach(() => {
   jest.mocked(runAPI.getJob).mockResolvedValue({ data: { success: true, status: "accepted", passedCount: 1, totalCount: 1, results: [{ id: "run", passed: true, stdout: "hello", output: "hello", status: "accepted" }] } } as any);
 });
 afterEach(() => clearAssessmentFaceReference("workspace"));
-
-it("shows only authored examples on the left and loads their input as custom input", async () => {
-  await start();
-  fireEvent.click(screen.getByRole("button", { name: "Question 2" }));
-  const examples = (await screen.findByRole("heading", { name: "Examples" })).parentElement!;
-  expect(within(examples).getAllByText("authored-example")).toHaveLength(2);
-  expect(within(examples).queryByText("hello")).not.toBeInTheDocument();
-  expect(within(examples).queryByText("secret")).not.toBeInTheDocument();
-  fireEvent.click(within(examples).getByRole("button", { name: /Load in Console/ }));
-  expect(screen.getByPlaceholderText("Enter custom input lines here...")).toHaveValue("authored-example");
-  fireEvent.click(screen.getByRole("button", { name: "Run Code" }));
-  await waitFor(() => expect(runAPI.run).toHaveBeenCalledWith(expect.objectContaining({
-    testCases: [{ id: "run", input: "authored-example", expected: "" }],
-  })));
-});
 
 it("keeps MCQ answers and coding drafts across sidebar navigation and review", async () => {
   await start();

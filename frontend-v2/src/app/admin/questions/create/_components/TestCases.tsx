@@ -18,7 +18,7 @@ export default function TestCases({ showTools = true }: { showTools?: boolean })
     <SectionCard
       id="test-cases"
       title="Test Cases"
-      subtitle="Add public and hidden tests for judging code. Write the examples shown in the left panel in the Examples section."
+      subtitle="Add public and hidden test cases for validation."
       icon={Database}
       delay={0.45}
     >

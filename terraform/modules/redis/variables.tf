@@ -34,13 +34,13 @@ variable "node_type" {
 variable "transit_encryption_enabled" {
   description = "Enable transit encryption (TLS)"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "at_rest_encryption_enabled" {
   description = "Enable at-rest encryption"
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "auth_token" {

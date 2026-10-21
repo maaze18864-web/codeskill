@@ -75,7 +75,7 @@ jobs:
         working-directory: ./backend-nestjs
         run: npm run test:startup
 
-      - name: Backend Unit Tests
+      - name: Backend Unit & Concurrency Tests
         working-directory: ./backend-nestjs
         run: npm test -- --maxWorkers=2
 

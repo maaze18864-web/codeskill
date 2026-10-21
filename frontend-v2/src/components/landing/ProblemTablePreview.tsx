@@ -1,34 +1,44 @@
 "use client";
 
-import React, { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Search, CheckCircle2, ArrowRight } from "lucide-react";
+import { problemsAPI } from "@/config/api";
+import { parsePublicProblemList, type PublicProblem } from "@/lib/public-problems";
 
-interface ProblemRow {
-  id: string;
-  title: string;
-  difficulty: "Easy" | "Medium" | "Hard";
-  acceptance: string;
-  solved: boolean;
-}
-
-const PROBLEMS: ProblemRow[] = [
-  { id: "two-sum", title: "Two Sum", difficulty: "Easy", acceptance: "48.2%", solved: true },
-  { id: "valid-parentheses", title: "Valid Parentheses", difficulty: "Easy", acceptance: "42.8%", solved: true },
-  { id: "merge-intervals", title: "Merge Intervals", difficulty: "Medium", acceptance: "47.1%", solved: false },
-  { id: "lru-cache", title: "LRU Cache", difficulty: "Medium", acceptance: "41.2%", solved: false },
-  { id: "word-ladder", title: "Word Ladder", difficulty: "Hard", acceptance: "38.7%", solved: false },
-];
+const PREVIEW_LIMIT = 5;
 
 export function ProblemTablePreview() {
   const [search, setSearch] = useState("");
   const [filterDifficulty, setFilterDifficulty] = useState<string>("All");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [retry, setRetry] = useState(0);
+  const [result, setResult] = useState<{ key: string; problems: PublicProblem[]; error: boolean } | null>(null);
+  const requestKey = JSON.stringify([debouncedSearch, filterDifficulty, retry]);
+  const loading = result?.key !== requestKey;
+  const problems = loading ? [] : result?.problems ?? [];
+  const error = !loading && Boolean(result?.error);
 
-  const filteredProblems = PROBLEMS.filter((p) => {
-    const matchSearch = p.title.toLowerCase().includes(search.toLowerCase());
-    const matchDiff = filterDifficulty === "All" || p.difficulty === filterDifficulty;
-    return matchSearch && matchDiff;
-  });
+  useEffect(() => {
+    const query = search.trim();
+    if (query === debouncedSearch) return;
+    const timer = setTimeout(() => setDebouncedSearch(query), 250);
+    return () => clearTimeout(timer);
+  }, [search, debouncedSearch]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    problemsAPI.getAll(1, PREVIEW_LIMIT, debouncedSearch, "All Topics", controller.signal, filterDifficulty)
+      .then((response) => {
+        if (controller.signal.aborted) return;
+        const { problems } = parsePublicProblemList(response.data, PREVIEW_LIMIT);
+        setResult({ key: requestKey, problems, error: false });
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setResult({ key: requestKey, problems: [], error: true });
+      });
+    return () => controller.abort();
+  }, [debouncedSearch, filterDifficulty, retry, requestKey]);
 
   return (
     <section className="w-full py-16 px-4 sm:px-6 md:px-8 border-b border-border bg-background text-foreground">
@@ -61,6 +71,7 @@ export function ProblemTablePreview() {
             <input
               type="text"
               placeholder="Search problems..."
+              aria-label="Search problems"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full pl-9 pr-3 py-1.5 text-xs rounded-md bg-background border border-border focus:outline-none focus:border-foreground transition-colors"
@@ -71,7 +82,9 @@ export function ProblemTablePreview() {
             {["All", "Easy", "Medium", "Hard"].map((diff) => (
               <button
                 key={diff}
+                type="button"
                 onClick={() => setFilterDifficulty(diff)}
+                aria-pressed={filterDifficulty === diff}
                 className={`px-3 py-1 rounded-md text-xs font-medium transition-colors cursor-pointer ${
                   filterDifficulty === diff
                     ? "bg-black text-white dark:bg-white dark:text-black font-semibold"
@@ -97,22 +110,29 @@ export function ProblemTablePreview() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {filteredProblems.map((prob) => (
+              {loading && (
+                <tr><td colSpan={5} className="py-6 px-4 text-center text-neutral-600 dark:text-neutral-400" role="status">Loading problems…</td></tr>
+              )}
+              {error && (
+                <tr><td colSpan={5} className="py-6 px-4 text-center">
+                  <span role="alert" className="text-red-600 dark:text-red-400">Problems could not be loaded.</span>{" "}
+                  <button type="button" onClick={() => setRetry(value => value + 1)} className="underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-foreground">Try again</button>
+                </td></tr>
+              )}
+              {problems.map((prob) => (
                 <tr
                   key={prob.id}
                   className="hover:bg-neutral-50 dark:hover:bg-neutral-900/40 transition-colors"
                 >
                   <td className="py-3 px-4 text-center">
-                    {prob.solved ? (
+                    {prob.status === "solved" ? (
                       <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 inline-block" />
                     ) : (
                       <span className="w-2 h-2 rounded-full bg-neutral-300 dark:bg-neutral-700 inline-block" />
                     )}
                   </td>
                   <td className="py-3 px-4 font-medium text-foreground">
-                    <Link href={`/problems/${prob.id}`} className="hover:underline">
-                      {prob.title}
-                    </Link>
+                    {prob.slug ? <Link href={`/problems/${encodeURIComponent(prob.slug)}`} className="hover:underline">{prob.title}</Link> : prob.title}
                   </td>
                   <td className="py-3 px-4">
                     <span
@@ -128,15 +148,15 @@ export function ProblemTablePreview() {
                     </span>
                   </td>
                   <td className="py-3 px-4 font-mono text-neutral-600 dark:text-neutral-400">
-                    {prob.acceptance}
+                    {prob.stats.acceptanceRate > 0 ? `${prob.stats.acceptanceRate}%` : "—"}
                   </td>
                   <td className="py-3 px-4 text-right">
-                    <Link
-                      href={`/problems/${prob.id}`}
+                    {prob.slug && <Link
+                      href={`/problems/${encodeURIComponent(prob.slug)}`}
                       className="px-2.5 py-1 rounded border border-border bg-background hover:bg-neutral-100 dark:hover:bg-neutral-800 text-[11px] font-medium text-foreground transition-colors inline-block"
                     >
                       Solve
-                    </Link>
+                    </Link>}
                   </td>
                 </tr>
               ))}

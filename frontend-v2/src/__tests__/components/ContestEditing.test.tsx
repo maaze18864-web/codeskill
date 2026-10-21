@@ -11,19 +11,19 @@ const push = jest.fn();
 const refresh = jest.fn();
 jest.mock("next/navigation", () => ({ useRouter: () => ({ push, refresh }), useParams: jest.fn() }));
 jest.mock("@/config/api", () => ({
-  adminContestsAPI: { getEligibleQuestions: jest.fn(), getById: jest.fn(), getAll: jest.fn(), update: jest.fn(), create: jest.fn(), delete: jest.fn() },
-  adminProblemsAPI: { getById: jest.fn() },
+  adminContestsAPI: { getById: jest.fn(), getAll: jest.fn(), update: jest.fn(), create: jest.fn(), delete: jest.fn() },
+  adminProblemsAPI: { getAll: jest.fn() },
 }));
 
 const id = "00000000-0000-4000-8000-000000000001";
-const original = { id, _id: id, title: "Existing Contest", slug: "existing-contest", description: "Original description", startTime: "2026-11-01T04:30:00.000Z", endTime: "2026-11-01T06:30:00.000Z", isPrivate: true, password: "access-code", isPublished: true, format: "coding" as const, problems: ["p1"] };
+const original = { id, _id: id, title: "Existing Contest", slug: "existing-contest", description: "Original description", startTime: "2026-11-01T04:30:00.000Z", endTime: "2026-11-01T06:30:00.000Z", isPrivate: true, password: "access-code", isPublished: true, contestFormat: "coding" as const, problems: ["p1"] };
 let saved = { ...original };
 
 beforeEach(() => {
   jest.clearAllMocks();
   saved = { ...original };
   jest.mocked(useParams).mockReturnValue({ id });
-  jest.mocked(adminContestsAPI.getEligibleQuestions).mockResolvedValue({ data: { questions: [{ _id: "p1", title: "Two Sum", slug: "two-sum", difficulty: "easy", type: "coding" }, { _id: "p2", title: "Trees", slug: "trees", difficulty: "medium", type: "coding" }, { _id: "p3", title: "Choice question", slug: "choice-question", difficulty: "easy", type: "mcq" }] } });
+  jest.mocked(adminProblemsAPI.getAll).mockResolvedValue({ data: { problems: [{ _id: "p1", title: "Two Sum", slug: "two-sum", difficulty: "easy", questionType: "coding" }, { _id: "p2", title: "Trees", slug: "trees", difficulty: "medium", questionType: "DSA" }, { _id: "p3", title: "Published MCQ", slug: "published-mcq", difficulty: "easy", questionType: "single_choice" }] } });
   jest.mocked(adminContestsAPI.getById).mockImplementation(async () => ({ data: { ...saved } }));
   jest.mocked(adminContestsAPI.getAll).mockImplementation(async () => ({ data: { contests: [{ ...saved }] } }));
   jest.mocked(adminContestsAPI.update).mockImplementation(async (_id, payload) => { saved = { ...saved, ...payload }; return { data: { contest: saved } }; });
@@ -40,6 +40,8 @@ it("loads, edits, saves the intended ID, and reloads persisted values without a 
   expect(screen.getByLabelText("Private Contest")).toBeChecked();
   expect(screen.getByLabelText("Publish Contest")).toBeChecked();
   expect(screen.getByLabelText("Contest Password")).toHaveValue("access-code");
+  expect(screen.getByLabelText("Contest Format")).toHaveValue("coding");
+  expect(screen.queryByText("Published MCQ", { exact: true })).not.toBeInTheDocument();
   const start = screen.getByLabelText(/Start Time/) as HTMLInputElement;
   expect(new Date(start.value).toISOString()).toBe(original.startTime);
   expect(screen.getByText("1 Selected")).toBeInTheDocument();
@@ -50,7 +52,7 @@ it("loads, edits, saves the intended ID, and reloads persisted values without a 
   fireEvent.click(screen.getByLabelText("Private Contest"));
   fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
   await waitFor(() => expect(push).toHaveBeenCalledWith("/admin/contests?updated=existing-contest"));
-  expect(adminContestsAPI.update).toHaveBeenCalledWith(id, expect.objectContaining({ title: "Updated Contest", description: "Updated description", startTime: original.startTime, endTime: original.endTime, isPrivate: false, isPublished: true, format: "coding", problems: ["p1", "p2"] }));
+  expect(adminContestsAPI.update).toHaveBeenCalledWith(id, expect.objectContaining({ title: "Updated Contest", description: "Updated description", startTime: original.startTime, endTime: original.endTime, isPrivate: false, isPublished: true, problems: ["p1", "p2"] }));
   expect(adminContestsAPI.create).not.toHaveBeenCalled();
   expect(refresh).toHaveBeenCalled();
   unmount();
@@ -77,33 +79,26 @@ it("preserves creation and slug generation using the same form", async () => {
   fireEvent.change(screen.getByLabelText(/End Time/), { target: { value: "2026-11-01T12:00" } });
   fireEvent.click(screen.getByText("Two Sum"));
   fireEvent.click(screen.getByRole("button", { name: "Create Contest" }));
-  await waitFor(() => expect(adminContestsAPI.create).toHaveBeenCalledWith(expect.objectContaining({ slug: "new-contest", format: "coding", problems: ["p1"] })));
+  await waitFor(() => expect(adminContestsAPI.create).toHaveBeenCalledWith(expect.objectContaining({ slug: "new-contest", problems: ["p1"] })));
   expect(adminContestsAPI.update).not.toHaveBeenCalled();
 });
 
-it("filters eligible questions by format and removes incompatible selections with a notice", async () => {
+it("filters questions by format and removes incompatible selections when switched", async () => {
   render(<ContestForm />);
-  await screen.findByText("Two Sum");
-  fireEvent.click(screen.getByText("Two Sum"));
-  fireEvent.change(screen.getByLabelText("Contest Format"), { target: { value: "mcq" } });
-  expect(screen.queryByText("Two Sum")).toBeNull();
-  expect(screen.getByText("Choice question")).toBeInTheDocument();
+  const format = await screen.findByLabelText("Contest Format");
+  await waitFor(() => expect(adminProblemsAPI.getAll).toHaveBeenCalledWith({ contestEligible: true }));
+  expect(await screen.findByText("Two Sum", { exact: true })).toBeInTheDocument();
+  expect(screen.queryByText("Published MCQ", { exact: true })).not.toBeInTheDocument();
+  fireEvent.change(format, { target: { value: "mcq" } });
+  expect(screen.getByText("Published MCQ", { exact: true })).toBeInTheDocument();
+  expect(screen.queryByText("Two Sum", { exact: true })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByText("Published MCQ", { exact: true }));
+  fireEvent.change(format, { target: { value: "coding" } });
+  expect(await screen.findByRole("alert")).toHaveTextContent("1 incompatible selected question was removed");
   expect(screen.getByText("0 Selected")).toBeInTheDocument();
-  expect(screen.getByRole("status")).toHaveTextContent("1 incompatible selected question was removed");
-  fireEvent.change(screen.getByLabelText("Contest Format"), { target: { value: "mixed" } });
-  expect(screen.getByText("Two Sum")).toBeInTheDocument();
-  expect(screen.getByText("Choice question")).toBeInTheDocument();
-});
-
-it("keeps a previously saved non-eligible coding problem visible and removable", async () => {
-  jest.mocked(adminContestsAPI.getEligibleQuestions).mockResolvedValueOnce({ data: { questions: [] } });
-  jest.mocked(adminProblemsAPI.getById).mockResolvedValueOnce({ data: { id: "p1", title: "Legacy problem", slug: "legacy-problem", difficulty: "easy" } });
-  render(<ContestForm contestId={id} />);
-  expect(await screen.findByText("Legacy problem")).toBeInTheDocument();
-  expect(screen.getByText(/Previously selected; remove to save/)).toBeInTheDocument();
-  expect(screen.getByText("1 Selected")).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: /Legacy problem/ }));
-  expect(screen.getByText("0 Selected")).toBeInTheDocument();
+  fireEvent.change(format, { target: { value: "mixed" } });
+  expect(screen.getByText("Published MCQ", { exact: true })).toBeInTheDocument();
+  expect(screen.getByText("Two Sum", { exact: true })).toBeInTheDocument();
 });
 
 it("shows load failures and allows retry without submitting an empty edit", async () => {

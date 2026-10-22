@@ -110,7 +110,7 @@ variable "backend_instance_type" {
 variable "piston_instance_type" {
   description = "EC2 instance type for Piston execution engine (compute/RAM for concurrent sandbox runs)"
   type        = string
-  default     = "t3.small"
+  default     = "t3.medium"
 }
 
 variable "judge0_instance_type" {

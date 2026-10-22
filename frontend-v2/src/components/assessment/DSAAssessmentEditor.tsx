@@ -30,6 +30,8 @@ import { awaitExecution } from "@/lib/await-execution";
 import ExecutionFeedback from '@/components/Result/ExecutionFeedback';
 import { hasSampleContent } from '@/components/problems/SampleTestCasesPanel';
 import { Spinner } from "@/components/ui/spinner";
+import { canonicalEditorLanguage, questionStarterCode } from "@/lib/editor-languages";
+import { hideEntryPoint, moveInsertionOffset, restoreEntryPoint } from "@/lib/hidden-entry-point";
 
 const LANGUAGES = [
   { value: "python", label: "Python 3", ext: "py" },
@@ -169,7 +171,7 @@ interface DSAAssessmentEditorProps {
     subtopic?: string;
     difficulty: string;
     marks: number;
-    starterCode?: string;
+    starterCode?: string | Array<{ language: string; code: string }> | Record<string, string>;
     codeSnippet?: string;
     language?: string;
     supportedLanguages?: string[];
@@ -181,11 +183,12 @@ interface DSAAssessmentEditorProps {
   savedResponse?: {
     code?: string;
     language?: string;
+    codeByLanguage?: Record<string, string>;
     testCasesPassed?: number;
     totalTestCases?: number;
     status?: string;
   };
-  onDraftChange?: (code: string, language: string) => void;
+  onDraftChange?: (code: string, language: string, codeByLanguage?: Record<string, string>) => void;
   onSave: (code: string, language: string, testCasesPassed: number, totalTestCases: number) => void | Promise<void>;
   onNext?: () => void;
   isLastQuestion?: boolean;
@@ -215,25 +218,32 @@ export default function DSAAssessmentEditor({
   const executionRuntimes = useExecutionRuntimes();
   const [language, setLanguage] = useState(initialLang);
 
+  const getQuestionStarterCode = (lang: string): string | undefined => {
+    return questionStarterCode(question.starterCode, lang, question.language);
+  };
+
   // Initialize code from saved response, or question starterCode, or language template
   const getInitialCode = (lang: string) => {
+    const languageDraft = Object.entries(savedResponse?.codeByLanguage || {}).find(
+      ([savedLanguage]) => canonicalEditorLanguage(savedLanguage) === canonicalEditorLanguage(lang),
+    )?.[1];
+    if (languageDraft !== undefined) return languageDraft;
     if (savedResponse?.code !== undefined && (savedResponse.code.trim().length > 0 || savedResponse.status === "draft")) {
       if (!savedResponse.language || savedResponse.language === lang) {
         return savedResponse.code;
       }
     }
-    if (question.starterCode && question.starterCode.trim().length > 0) {
-      if (!question.language || question.language.toLowerCase() === lang.toLowerCase()) {
-        return question.starterCode;
-      }
-    }
+    const starterCode = getQuestionStarterCode(lang);
+    if (starterCode !== undefined && starterCode.trim().length > 0) return starterCode;
     return DEFAULT_STARTER_CODE[lang] || DEFAULT_STARTER_CODE.python;
   };
 
   const [code, setCode] = useState(() => getInitialCode(initialLang));
   const [codeByLang, setCodeByLang] = useState<Record<string, string>>(() => {
-    const initMap: Record<string, string> = {};
-    initMap[initialLang] = getInitialCode(initialLang);
+    const initMap = Object.fromEntries(
+      Object.entries(savedResponse?.codeByLanguage || {}).map(([savedLanguage, value]) => [canonicalEditorLanguage(savedLanguage), value]),
+    );
+    initMap[canonicalEditorLanguage(initialLang)] = getInitialCode(initialLang);
     return initMap;
   });
   const [showLangDropdown, setShowLangDropdown] = useState(false);
@@ -259,10 +269,19 @@ export default function DSAAssessmentEditor({
   // The parent keys this workspace by question ID. Drafts are restored from
   // attempt state on each mount; saving does not reset the active editor model.
   const updateCode = (value: string) => {
-    setCode(value);
-    setCodeByLang(previous => ({ ...previous, [language]: value }));
+    const hiddenEntryPoint = hideEntryPoint(code, language);
+    const nextCode = hiddenEntryPoint
+      ? restoreEntryPoint(
+          value,
+          hiddenEntryPoint.hiddenCode,
+          moveInsertionOffset(hiddenEntryPoint.visibleCode, value, hiddenEntryPoint.insertionOffset),
+        )
+      : value;
+    setCode(nextCode);
+    const next = { ...codeByLang, [canonicalEditorLanguage(language)]: nextCode };
+    setCodeByLang(next);
     setRunResult(null);
-    onDraftChange?.(value, language);
+    onDraftChange?.(nextCode, language, next);
   };
 
   // Language switch handler - caches previous language code and retrieves/generates new language boilerplate
@@ -273,17 +292,20 @@ export default function DSAAssessmentEditor({
     }
 
     // Save current code to cache for active language
-    const updatedCache = { ...codeByLang, [language]: code };
+    const activeLanguage = canonicalEditorLanguage(language);
+    const targetLanguage = canonicalEditorLanguage(newLang);
+    const updatedCache = { ...codeByLang, [activeLanguage]: code };
 
     // Determine target code for new language
-    let targetCode = updatedCache[newLang];
+    let targetCode = updatedCache[targetLanguage];
     if (!targetCode || targetCode.trim().length === 0) {
-      if (question.starterCode && (!question.language || question.language.toLowerCase() === newLang.toLowerCase())) {
-        targetCode = question.starterCode;
+      const starterCode = getQuestionStarterCode(newLang);
+      if (starterCode !== undefined && starterCode.trim().length > 0) {
+        targetCode = starterCode;
       } else {
         targetCode = DEFAULT_STARTER_CODE[newLang] || DEFAULT_STARTER_CODE.python;
       }
-      updatedCache[newLang] = targetCode;
+      updatedCache[targetLanguage] = targetCode;
     }
 
     setCodeByLang(updatedCache);
@@ -294,7 +316,7 @@ export default function DSAAssessmentEditor({
     } catch {
       // Preference persistence must never block the language switch.
     }
-    onDraftChange?.(targetCode, newLang);
+    onDraftChange?.(targetCode, newLang, updatedCache);
     setShowLangDropdown(false);
     setRunResult(null);
 
@@ -306,8 +328,9 @@ export default function DSAAssessmentEditor({
   // Reset starter code
   const handleResetCode = (forceDefault: boolean = false) => {
     let template = DEFAULT_STARTER_CODE[language] || DEFAULT_STARTER_CODE.python;
-    if (!forceDefault && question.starterCode && (!question.language || question.language.toLowerCase() === language.toLowerCase())) {
-      template = question.starterCode;
+    const starterCode = getQuestionStarterCode(language);
+    if (!forceDefault && starterCode !== undefined) {
+      template = starterCode;
     }
     setCode(template);
     onDraftChange?.(template, language);
@@ -325,7 +348,8 @@ export default function DSAAssessmentEditor({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const lineCount = Math.max(1, code.split("\n").length);
+  const editorCode = hideEntryPoint(code, language)?.visibleCode ?? code;
+  const lineCount = Math.max(1, editorCode.split("\n").length);
 
   // Run Test (Single or Sample cases)
   const handleRunTest = async () => {
@@ -587,7 +611,7 @@ export default function DSAAssessmentEditor({
 
               {showLangDropdown && (
                 <div className="absolute left-0 top-full mt-1 w-44 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl z-50 py-1 overflow-hidden">
-                  {LANGUAGES.filter(option => (!question.supportedLanguages?.length || question.supportedLanguages.includes(option.value)) && (!executionRuntimes.length || executionRuntimes.some(runtime => runtime.language === option.value && runtime.enabled))).map((l) => (
+                  {LANGUAGES.filter(option => (!question.supportedLanguages?.length || question.supportedLanguages.some(value => canonicalEditorLanguage(value) === canonicalEditorLanguage(option.value))) && (!executionRuntimes.length || executionRuntimes.some(runtime => canonicalEditorLanguage(runtime.language) === canonicalEditorLanguage(option.value) && runtime.enabled))).map((l) => (
                     <button
                       key={l.value}
                       type="button"
@@ -608,7 +632,7 @@ export default function DSAAssessmentEditor({
             </div>
 
             <span className="text-[11px] text-zinc-500 hidden sm:inline font-mono">
-              {lineCount} lines • {code.length} chars
+              {lineCount} lines • {editorCode.length} chars
             </span>
           </div>
 
@@ -643,7 +667,7 @@ export default function DSAAssessmentEditor({
             height="100%"
             path={`${question._id}/solution.${LANGUAGES.find(item => item.value === language)?.ext || language}`}
             language={language}
-            value={code}
+            value={editorCode}
             onChange={value => { if (value !== undefined && value !== code) updateCode(value); }}
             theme={resolvedTheme === "dark" ? "vs-dark" : "light"}
             options={{

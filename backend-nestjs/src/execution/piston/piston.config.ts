@@ -28,7 +28,7 @@ export function pistonConfig() {
     url.hash
   )
     throw new Error('Invalid PISTON_BASE_URL');
-  const runTimeout = integer('PISTON_DEFAULT_RUN_TIMEOUT_MS', 3000, 100, 60000);
+  const runTimeout = integer('PISTON_DEFAULT_RUN_TIMEOUT_MS', 8000, 100, 60000);
   const compileTimeout = integer(
     'PISTON_DEFAULT_COMPILE_TIMEOUT_MS',
     10000,
@@ -37,7 +37,7 @@ export function pistonConfig() {
   );
   const requestTimeout = integer(
     'PISTON_REQUEST_TIMEOUT_MS',
-    15000,
+    25000,
     1000,
     180000,
   );
@@ -61,7 +61,7 @@ export function pistonConfig() {
     baseURL: baseURL.replace(/\/$/, ''),
     urls,
     apiKey: process.env.PISTON_API_KEY,
-    discoveryTimeout: integer('JUDGE_DISCOVERY_TIMEOUT_MS', 2000, 100, 10000),
+    discoveryTimeout: integer('JUDGE_DISCOVERY_TIMEOUT_MS', 6000, 100, 30000),
     runTimeout,
     timeMultiplier: integer('JUDGE_TIME_LIMIT_MULTIPLIER', 1, 1, 20),
     compileTimeout,
@@ -88,7 +88,7 @@ export function pistonConfig() {
     maxQueueWaiting: integer('MAX_QUEUE_WAITING', 500, 1, 1000000),
     memory: integer(
       'PISTON_DEFAULT_MEMORY_LIMIT_BYTES',
-      268435456,
+      536870912,
       33554432,
       1073741824,
     ),
@@ -98,7 +98,7 @@ export function pistonConfig() {
       33554432,
       2147483648,
     ),
-    cacheTtl: integer('PISTON_RUNTIME_CACHE_TTL_MS', 60000, 1000, 3600000),
+    cacheTtl: integer('PISTON_RUNTIME_CACHE_TTL_MS', 1800000, 1000, 3600000),
     outputLimit: integer('PISTON_OUTPUT_LIMIT_BYTES', 65536, 1024, 262144),
     versions: versions as Record<string, string>,
   };

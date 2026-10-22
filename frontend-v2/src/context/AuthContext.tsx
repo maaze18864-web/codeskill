@@ -154,6 +154,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       setError(null);
       const res = await authAPI.forceChangePassword(data);
+      if (typeof window !== "undefined") {
+        if (res.data?.token) {
+          localStorage.setItem("codeskill_token", res.data.token);
+        }
+        if (res.data?.refreshToken) {
+          localStorage.setItem("codeskill_refresh_token", res.data.refreshToken);
+        }
+      }
       if (res.data?.user) {
         setUser((prev) => (prev ? { ...prev, ...res.data.user, forcePasswordChange: false } : prev));
       }

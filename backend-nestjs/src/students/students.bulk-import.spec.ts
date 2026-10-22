@@ -249,6 +249,45 @@ describe('Students Bulk Import & Validation', () => {
     expect(result.generatedPassword.length).toBeGreaterThanOrEqual(12);
   });
 
+  it('resets student password and returns temporaryPassword with bumped tokenVersion', async () => {
+    const existingStudent = {
+      id: 'student-uuid-1',
+      uid: 'UID_RESET_1',
+      email: 'reset@example.com',
+      name: 'Reset Student',
+      password: 'old-hashed-password',
+      tokenVersion: 1,
+    };
+    userRepo.findOne.mockResolvedValue(existingStudent);
+
+    const result = await service.resetPassword('student-uuid-1', admin);
+    expect(result.temporaryPassword).toBeDefined();
+    expect(result.temporaryPassword.length).toBeGreaterThanOrEqual(10);
+    expect(existingStudent.tokenVersion).toBe(2);
+    expect(existingStudent.forcePasswordChange).toBe(true);
+  });
+
+  it('preserves custom password and allows setting forcePasswordChange on create', async () => {
+    const result = await service.create(
+      {
+        name: 'Custom Pass Student',
+        email: 'custompass@example.com',
+        uid: 'UID_CUSTOM_100',
+        password: 'MyChosenPassword123!',
+        forcePasswordChange: false,
+      } as any,
+      admin,
+    );
+
+    expect(result.initialPassword).toBe('MyChosenPassword123!');
+    expect(result.generatedPassword).toBeNull();
+    expect(userRepo.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        forcePasswordChange: false,
+      }),
+    );
+  });
+
   it('rejects batch import exceeding 500 rows to prevent threadpool starvation (ISSUE-PRF-002)', async () => {
     const hugeBatch = Array.from({ length: 501 }, (_, i) => ({
       uid: `UID_${i}`,

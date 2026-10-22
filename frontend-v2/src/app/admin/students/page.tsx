@@ -78,7 +78,15 @@ export default function AdminStudentsPage() {
     student: Student;
     resetDone: boolean;
     loading: boolean;
+    temporaryPassword?: string | null;
   } | null>(null);
+  const [createdStudentResult, setCreatedStudentResult] = useState<{
+    student: any;
+    password: string;
+    forcePasswordChange: boolean;
+  } | null>(null);
+  const [copiedReset, setCopiedReset] = useState(false);
+  const [copiedCreate, setCopiedCreate] = useState(false);
 
   // Form states for Create/Edit
   const [formData, setFormData] = useState({
@@ -86,6 +94,7 @@ export default function AdminStudentsPage() {
     name: "",
     email: "",
     password: "",
+    forcePasswordChange: true,
     university: "",
     department: "",
     course: "",
@@ -134,6 +143,7 @@ export default function AdminStudentsPage() {
       name: "",
       email: "",
       password: "",
+      forcePasswordChange: true,
       university: "",
       department: "",
       course: "",
@@ -154,6 +164,7 @@ export default function AdminStudentsPage() {
       name: student.name || "",
       email: student.email || "",
       password: "",
+      forcePasswordChange: student.forcePasswordChange ?? true,
       university: student.studentProfile?.university || "",
       department: student.studentProfile?.department || "",
       course: student.studentProfile?.course || "",
@@ -191,6 +202,9 @@ export default function AdminStudentsPage() {
     if (formData.password?.trim()) {
       payload.password = formData.password.trim();
     }
+    if (!editingStudent) {
+      payload.forcePasswordChange = formData.forcePasswordChange;
+    }
 
     try {
       if (editingStudent) {
@@ -198,12 +212,25 @@ export default function AdminStudentsPage() {
         setEditingStudent(null);
       } else {
         const res = await adminStudentsAPI.create(payload);
-        if (res.data?.generatedPassword) {
-          alert(
-            `Student created successfully!\nGenerated Password: ${res.data.generatedPassword}\nPlease convey this to the student.`,
-          );
-        }
+        const pass =
+          res.data?.generatedPassword ||
+          res.data?.initialPassword ||
+          formData.password?.trim() ||
+          res.data?.student?.password;
+
         setIsCreateOpen(false);
+        if (pass) {
+          setCreatedStudentResult({
+            student: res.data?.student || {
+              name: formData.name.trim(),
+              uid: formData.uid.trim().toUpperCase(),
+              email: formData.email.trim().toLowerCase(),
+            },
+            password: pass,
+            forcePasswordChange:
+              res.data?.student?.forcePasswordChange ?? formData.forcePasswordChange,
+          });
+        }
       }
       fetchStudents();
     } catch (err: any) {
@@ -241,6 +268,7 @@ export default function AdminStudentsPage() {
       student,
       resetDone: false,
       loading: false,
+      temporaryPassword: null,
     });
   };
 
@@ -249,11 +277,22 @@ export default function AdminStudentsPage() {
     setResetModalData((prev) => (prev ? { ...prev, loading: true } : null));
 
     try {
-      await adminStudentsAPI.resetPassword(resetModalData.student._id);
-      // AUD-037: The backend no longer returns the plaintext password.
-      // The credential email is queued by the backend automatically.
+      const res = await adminStudentsAPI.resetPassword(resetModalData.student._id);
+      const tempPassword =
+        res.data?.temporaryPassword ||
+        res.data?.generatedPassword ||
+        res.data?.data?.temporaryPassword ||
+        res.data?.data?.generatedPassword;
+
       setResetModalData((prev) =>
-        prev ? { ...prev, resetDone: true, loading: false } : null,
+        prev
+          ? {
+              ...prev,
+              resetDone: true,
+              loading: false,
+              temporaryPassword: tempPassword,
+            }
+          : null,
       );
       fetchStudents();
     } catch (err: any) {
@@ -674,6 +713,29 @@ export default function AdminStudentsPage() {
                     />
                   </div>
                 )}
+
+                {!editingStudent && (
+                  <div className="col-span-1 sm:col-span-2 flex items-center gap-2 pt-1">
+                    <input
+                      id="student-form-force-pass"
+                      type="checkbox"
+                      checked={formData.forcePasswordChange}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          forcePasswordChange: e.target.checked,
+                        })
+                      }
+                      className="w-4 h-4 rounded border-border text-amber-500 focus:ring-amber-500"
+                    />
+                    <label
+                      htmlFor="student-form-force-pass"
+                      className="text-xs text-muted-foreground cursor-pointer select-none"
+                    >
+                      Require student to change password on first login
+                    </label>
+                  </div>
+                )}
               </div>
 
               <div className="pt-2 border-t border-border">
@@ -835,21 +897,64 @@ export default function AdminStudentsPage() {
 
             {resetModalData.resetDone ? (
               <div className="space-y-4">
-                <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl space-y-2">
-                  <div className="text-xs font-semibold text-emerald-400">
-                    Password Reset Successfully
+                <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl space-y-3">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-emerald-400">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                    <span>Password Reset Successfully</span>
                   </div>
                   <p className="text-xs text-emerald-400/80 leading-relaxed">
-                    ✓ A new secure temporary password has been set for{" "}
-                    <strong>{resetModalData.student.name}</strong>.<br />
-                    ✓ The student will be forced to change it on next login.<br />
-                    ✓ Credential email has been queued for delivery.<br />
-                    ✓ Action recorded in audit timeline.
+                    A new secure temporary password has been set for{" "}
+                    <strong>{resetModalData.student.name}</strong>.
                   </p>
+
+                  {resetModalData.temporaryPassword && (
+                    <div className="p-3 bg-background/90 border border-emerald-500/30 rounded-xl flex items-center justify-between gap-3 shadow-xs">
+                      <div className="space-y-0.5 overflow-hidden">
+                        <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                          New Temporary Password
+                        </div>
+                        <div className="font-mono text-sm sm:text-base font-bold text-foreground select-all tracking-wide truncate">
+                          {resetModalData.temporaryPassword}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (resetModalData.temporaryPassword) {
+                            navigator.clipboard.writeText(resetModalData.temporaryPassword);
+                            setCopiedReset(true);
+                            setTimeout(() => setCopiedReset(false), 2000);
+                          }
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-600 dark:text-emerald-400 text-xs font-semibold flex items-center gap-1.5 shrink-0 transition-colors"
+                      >
+                        {copiedReset ? (
+                          <>
+                            <Check className="w-3.5 h-3.5 text-emerald-500" />
+                            <span>Copied!</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5" />
+                            <span>Copy</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="text-[11px] text-emerald-400/80 space-y-1 pt-1 border-t border-emerald-500/15">
+                    <p>✓ Provide this temporary password to the student.</p>
+                    <p>✓ Student will be required to establish a new password upon sign-in.</p>
+                    <p>✓ Action recorded in administrative audit timeline.</p>
+                  </div>
                 </div>
 
                 <button
-                  onClick={() => setResetModalData(null)}
+                  onClick={() => {
+                    setResetModalData(null);
+                    setCopiedReset(false);
+                  }}
                   className="w-full h-10 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-xl text-sm transition-colors"
                 >
                   Done
@@ -883,6 +988,94 @@ export default function AdminStudentsPage() {
                 </div>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Created Student Credentials Info Box */}
+      {createdStudentResult && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-card border border-border rounded-2xl max-w-md w-full p-6 shadow-2xl relative space-y-4">
+            <button
+              onClick={() => {
+                setCreatedStudentResult(null);
+                setCopiedCreate(false);
+              }}
+              className="absolute top-4 right-4 text-muted-foreground hover:text-foreground"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 flex items-center justify-center">
+              <CheckCircle2 className="w-6 h-6" />
+            </div>
+
+            <div>
+              <h3 className="text-lg font-bold tracking-tight text-foreground">
+                Student Account Created
+              </h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Candidate: <strong>{createdStudentResult.student.name}</strong> (
+                <span className="font-mono">{createdStudentResult.student.uid}</span>)
+              </p>
+            </div>
+
+            <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl space-y-3">
+              <div className="text-xs text-emerald-400 leading-relaxed">
+                Student account was created successfully. Save or convey the credentials below:
+              </div>
+
+              <div className="p-3 bg-background/90 border border-emerald-500/30 rounded-xl flex items-center justify-between gap-3 shadow-xs">
+                <div className="space-y-0.5 overflow-hidden">
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Initial / Generated Password
+                  </div>
+                  <div className="font-mono text-sm sm:text-base font-bold text-foreground select-all tracking-wide truncate">
+                    {createdStudentResult.password}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(createdStudentResult.password);
+                    setCopiedCreate(true);
+                    setTimeout(() => setCopiedCreate(false), 2000);
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-600 dark:text-emerald-400 text-xs font-semibold flex items-center gap-1.5 shrink-0 transition-colors"
+                >
+                  {copiedCreate ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-500" />
+                      <span>Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Copy</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <div className="text-[11px] text-emerald-400/80 space-y-1 pt-1 border-t border-emerald-500/15">
+                <p>• <strong>Sign-in identifier:</strong> Use UID ({createdStudentResult.student.uid}) or Email ({createdStudentResult.student.email}).</p>
+                {createdStudentResult.forcePasswordChange ? (
+                  <p>• <strong>First Login:</strong> Student will be prompted to establish a permanent password.</p>
+                ) : (
+                  <p>• <strong>Direct Access:</strong> Student can sign in directly with this password.</p>
+                )}
+              </div>
+            </div>
+
+            <button
+              onClick={() => {
+                setCreatedStudentResult(null);
+                setCopiedCreate(false);
+              }}
+              className="w-full h-10 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold rounded-xl text-sm transition-colors"
+            >
+              Done
+            </button>
           </div>
         </div>
       )}

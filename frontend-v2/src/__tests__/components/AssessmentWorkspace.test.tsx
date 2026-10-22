@@ -65,6 +65,145 @@ it("keeps MCQ answers and coding drafts across sidebar navigation and review", a
   expect(screen.getByRole("progressbar", { name: "Assessment progress" })).toHaveAttribute("aria-valuenow", "1");
 });
 
+it("loads each question's uploaded language templates and keeps edits question-local", async () => {
+  const customQuestions = [
+    {
+      _id: "custom-one", question: "First template", questionType: "coding", topic: "Templates",
+      language: "python3", supportedLanguages: ["cpp", "java", "python3"], options: [], marks: 5,
+      starterCode: [
+        { language: "cpp", code: "CUSTOM_CPP_ONE" },
+        { language: "java", code: "CUSTOM_JAVA_ONE" },
+        { language: "python3", code: "CUSTOM_PYTHON_ONE" },
+      ], testCases: [],
+    },
+    {
+      _id: "custom-two", question: "Second template", questionType: "coding", topic: "Templates",
+      language: "python3", supportedLanguages: ["cpp", "java", "python3"], options: [], marks: 5,
+      starterCode: [
+        { language: "cpp", code: "CUSTOM_CPP_TWO" },
+        { language: "java", code: "CUSTOM_JAVA_TWO" },
+        { language: "python3", code: "CUSTOM_PYTHON_TWO" },
+      ], testCases: [],
+    },
+  ];
+  jest.mocked(studentAssessmentsAPI.startAttempt).mockResolvedValueOnce({ data: {
+    title: "Template assessment", durationMinutes: 60, startedAt: new Date().toISOString(),
+    questions: customQuestions,
+    savedResponses: customQuestions.map((question) => ({ questionId: question._id, code: "", language: "python", status: "unvisited" })),
+  } } as any);
+  render(<Page params={Promise.resolve({ id: "workspace" })} />);
+  fireEvent.click(screen.getByRole("button", { name: "Start workspace" }));
+  await screen.findByRole("textbox", { name: "Assessment code editor" });
+
+  const editor = await screen.findByRole("textbox", { name: "Assessment code editor" });
+  expect(editor).toHaveValue("CUSTOM_PYTHON_ONE");
+
+  fireEvent.click(screen.getByRole("button", { name: /Python 3/ }));
+  fireEvent.click(screen.getByRole("button", { name: "C++ (GCC)" }));
+  expect(editor).toHaveValue("CUSTOM_CPP_ONE");
+  fireEvent.change(editor, { target: { value: "MY_CPP_DRAFT" } });
+  fireEvent.click(screen.getByRole("button", { name: /C\+\+ \(GCC\)/ }));
+  fireEvent.click(screen.getByRole("button", { name: "Java (OpenJDK)" }));
+  expect(editor).toHaveValue("CUSTOM_JAVA_ONE");
+
+  fireEvent.click(screen.getByRole("button", { name: "Question 2" }));
+  expect(await screen.findByRole("textbox", { name: "Assessment code editor" })).toHaveValue("CUSTOM_PYTHON_TWO");
+  fireEvent.click(screen.getByRole("button", { name: "Question 1" }));
+  const restoredEditor = await screen.findByRole("textbox", { name: "Assessment code editor" });
+  expect(restoredEditor).toHaveValue("CUSTOM_JAVA_ONE");
+  fireEvent.click(screen.getByRole("button", { name: /Java \(OpenJDK\)/ }));
+  fireEvent.click(screen.getByRole("button", { name: "C++ (GCC)" }));
+  expect(restoredEditor).toHaveValue("MY_CPP_DRAFT");
+});
+
+it("hides C++ main from editing but sends the original driver with the edited solution", async () => {
+  const starterCode = [
+    "#include <iostream>",
+    "int solve() { return 0; }",
+    "int main() {",
+    "  if (true) { std::cout << solve(); }",
+    "  return 0;",
+    "}",
+    "",
+  ].join("\n");
+  jest.mocked(studentAssessmentsAPI.startAttempt).mockResolvedValueOnce({ data: {
+    title: "Driver protection", durationMinutes: 60, startedAt: new Date().toISOString(),
+    questions: [{
+      _id: "driver-question", question: "Edit solve", questionType: "coding", topic: "C++",
+      language: "cpp", supportedLanguages: ["cpp"], options: [], marks: 5,
+      starterCode: [{ language: "cpp", code: starterCode }], testCases: [],
+    }],
+    savedResponses: [{ questionId: "driver-question", code: "", language: "cpp", status: "unvisited" }],
+  } } as any);
+
+  render(<Page params={Promise.resolve({ id: "workspace" })} />);
+  fireEvent.click(screen.getByRole("button", { name: "Start workspace" }));
+  const editor = await screen.findByRole("textbox", { name: "Assessment code editor" });
+  expect(editor).toHaveValue("#include <iostream>\nint solve() { return 0; }\n\n");
+  expect((editor as HTMLTextAreaElement).value).not.toContain("int main()");
+
+  fireEvent.change(editor, { target: { value: "#include <iostream>\nint solve() { return 42; }\n\n" } });
+  expect(editor).toHaveValue("#include <iostream>\nint solve() { return 42; }\n\n");
+  expect((editor as HTMLTextAreaElement).value).not.toContain("int main()");
+
+  fireEvent.click(screen.getByRole("button", { name: "Custom Input" }));
+  fireEvent.change(screen.getByPlaceholderText("Enter custom input lines here..."), { target: { value: "1" } });
+  fireEvent.click(screen.getByRole("button", { name: "Run Code" }));
+  await waitFor(() => expect(runAPI.run).toHaveBeenCalledWith(expect.objectContaining({
+    code: expect.stringContaining("int main()"),
+    language: "cpp",
+  })));
+  const runSource = jest.mocked(runAPI.run).mock.calls.at(-1)?.[0].code;
+  expect(runSource).toContain("int solve() { return 42; }");
+  expect(runSource?.match(/int main\s*\(/g)).toHaveLength(1);
+  expect(runSource).toContain("if (true) { std::cout << solve(); }");
+
+  await screen.findByText("Run successful");
+  fireEvent.click(screen.getByRole("button", { name: "Submit Solution" }));
+  await waitFor(() => expect(studentAssessmentsAPI.evaluateCode).toHaveBeenCalledWith("workspace", expect.objectContaining({
+    questionId: "driver-question",
+    code: runSource,
+    language: "cpp",
+  })));
+});
+
+it("hides a Python main guard while retaining it in run and submission source", async () => {
+  const starterCode = "def solve():\n    return 0\n\nif __name__ == '__main__':\n    print(solve())\n";
+  jest.mocked(studentAssessmentsAPI.startAttempt).mockResolvedValueOnce({ data: {
+    title: "Python driver protection", durationMinutes: 60, startedAt: new Date().toISOString(),
+    questions: [{
+      _id: "python-driver-question", question: "Edit solve", questionType: "coding", topic: "Python",
+      language: "python", supportedLanguages: ["python"], options: [], marks: 5,
+      starterCode: [{ language: "python", code: starterCode }], testCases: [],
+    }],
+    savedResponses: [{ questionId: "python-driver-question", code: "", language: "python", status: "unvisited" }],
+  } } as any);
+
+  render(<Page params={Promise.resolve({ id: "workspace" })} />);
+  fireEvent.click(screen.getByRole("button", { name: "Start workspace" }));
+  const editor = await screen.findByRole("textbox", { name: "Assessment code editor" });
+  expect(editor).toHaveValue("def solve():\n    return 0\n\n");
+  fireEvent.change(editor, { target: { value: "def solve():\n    return 42\n\n" } });
+
+  fireEvent.click(screen.getByRole("button", { name: "Custom Input" }));
+  fireEvent.change(screen.getByPlaceholderText("Enter custom input lines here..."), { target: { value: "" } });
+  fireEvent.click(screen.getByRole("button", { name: "Run Code" }));
+  await waitFor(() => expect(runAPI.run).toHaveBeenCalledWith(expect.objectContaining({
+    code: "def solve():\n    return 42\n\nif __name__ == '__main__':\n    print(solve())\n",
+    language: "python",
+  })));
+  const runSource = jest.mocked(runAPI.run).mock.calls.at(-1)?.[0].code;
+  expect(runSource?.match(/if __name__ == '__main__':/g)).toHaveLength(1);
+
+  await screen.findByText("Run successful");
+  fireEvent.click(screen.getByRole("button", { name: "Submit Solution" }));
+  await waitFor(() => expect(studentAssessmentsAPI.evaluateCode).toHaveBeenCalledWith("workspace", expect.objectContaining({
+    questionId: "python-driver-question",
+    code: runSource,
+    language: "python",
+  })));
+});
+
 it("runs custom input, saves a coding solution, and submits the latest code with the attempt", async () => {
   await start();
   fireEvent.click(screen.getByRole("button", { name: "Question 2" }));

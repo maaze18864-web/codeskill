@@ -68,7 +68,7 @@ interface Question {
   negativeMarks: number;
   options: string[];
   codeSnippet?: string;
-  starterCode?: string;
+  starterCode?: string | Array<{ language: string; code: string }> | Record<string, string>;
   language?: string;
   constraints?: string | string[];
   supportedLanguages?: string[];
@@ -116,6 +116,7 @@ export default function TakeAssessmentPage({
         selectedAnswers?: number[];
         code?: string;
         language?: string;
+        codeByLanguage?: Record<string, string>;
         testCasesPassed?: number;
         totalTestCases?: number;
         status: string;
@@ -324,6 +325,7 @@ export default function TakeAssessmentPage({
           selectedAnswers?: number[];
           code?: string;
           language?: string;
+          codeByLanguage?: Record<string, string>;
           testCasesPassed?: number;
           totalTestCases?: number;
           status: string;
@@ -341,6 +343,7 @@ export default function TakeAssessmentPage({
                 : [],
             code: r.code || "",
             language: r.language || "python",
+            codeByLanguage: r.code && r.language ? { [r.language]: r.code } : {},
             testCasesPassed: r.testCasesPassed || 0,
             totalTestCases: r.totalTestCases || 0,
             status:
@@ -781,11 +784,12 @@ export default function TakeAssessmentPage({
 
   // Keep editor drafts in the attempt state so sidebar navigation and timed
   // autosaves include the latest code, even before Submit Solution is clicked.
-  const handleCodingDraft = (code: string, language: string) => {
+  const handleCodingDraft = (code: string, language: string, codeByLanguage?: Record<string, string>) => {
     if (!currentQ) return;
     const previous = responsesRef.current[currentQ._id];
     const next = { ...responsesRef.current, [currentQ._id]: {
       ...previous, selectedAnswer: -1, code, language,
+      codeByLanguage: { ...(previous?.codeByLanguage || {}), ...(codeByLanguage || {}), [language]: code },
       testCasesPassed: 0, totalTestCases: 0,
       status: previous?.status === "marked_for_review" ? "marked_for_review" : "draft",
     } };
@@ -803,10 +807,12 @@ export default function TakeAssessmentPage({
     const nextResponses = {
       ...responsesRef.current,
       [currentQ._id]: {
+        ...responsesRef.current[currentQ._id],
         selectedAnswer: -1,
         selectedAnswers: [] as number[],
         code,
         language,
+        codeByLanguage: { ...(responsesRef.current[currentQ._id]?.codeByLanguage || {}), [language]: code },
         testCasesPassed,
         totalTestCases,
         status: "answered",

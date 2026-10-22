@@ -24,6 +24,7 @@ import Editor from "@monaco-editor/react";
 import { submissionAPI, runAPI, problemsAPI, discussionsAPI } from "@/config/api";
 import { useTheme } from "@/context/ThemeContext";
 import { Spinner } from "@/components/ui/spinner";
+import { hideEntryPoint, updateSourceFromVisibleEditor } from "@/lib/hidden-entry-point";
 import gsap from "gsap";
 import { useGSAP } from "@gsap/react";
 
@@ -107,6 +108,7 @@ export default function ProblemWorkspace({ params, embedded = false, contestId }
   });
   const [showLanguageDropdown, setShowLanguageDropdown] = useState(false);
   const [code, setCode] = useState<string>("");
+  const editorCode = hideEntryPoint(code, language)?.visibleCode ?? code;
 
   const [vimMode, setVimMode] = useState(false);
   const [editorInst, setEditorInst] = useState<any>(null);
@@ -1307,8 +1309,8 @@ export default function ProblemWorkspace({ params, embedded = false, contestId }
                       height="100%"
                       language={language}
                       theme={editorTheme}
-                      value={code}
-                      onChange={(val) => setCode(val || "")}
+                      value={editorCode}
+                      onChange={(val) => setCode(updateSourceFromVisibleEditor(code, val || "", language))}
                       onMount={handleEditorMount}
                       options={{
                         minimap: { enabled: true, maxColumn: 80, scale: 1 },

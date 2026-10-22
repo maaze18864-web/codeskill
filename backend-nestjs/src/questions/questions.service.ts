@@ -2107,7 +2107,10 @@ export class QuestionsService {
             if (!existing.inputFormat && doc.inputFormat) existing.inputFormat = doc.inputFormat;
             if (!existing.outputFormat && doc.outputFormat) existing.outputFormat = doc.outputFormat;
             if ((!existing.examples || existing.examples.length === 0) && doc.examples?.length) existing.examples = doc.examples;
-            if ((!existing.starterCode || existing.starterCode.length === 0) && doc.starterCode?.length) existing.starterCode = doc.starterCode;
+            // Starter templates are explicit author-provided execution inputs. Refresh them
+            // from the import when present, even when other existing question content is
+            // intentionally preserved by the non-destructive merge strategy.
+            if (doc.starterCode?.length) existing.starterCode = doc.starterCode;
             if ((!existing.referenceSolutions || existing.referenceSolutions.length === 0) && doc.referenceSolutions?.length) existing.referenceSolutions = doc.referenceSolutions;
             if ((!existing.supportedLanguages || existing.supportedLanguages.length === 0) && doc.supportedLanguages?.length) existing.supportedLanguages = doc.supportedLanguages;
             existing.metadata = {

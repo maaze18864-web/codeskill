@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, use } from "react";
+import { useEffect, useState, useRef, use } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -27,6 +27,8 @@ import {
 } from "lucide-react";
 import { adminAssessmentsAPI } from "@/config/api";
 import toast from "react-hot-toast";
+import { formatIndianDateTime } from "@/lib/indian-time";
+import { assessmentResultsCSV, resultText } from "@/lib/assessment-results-export";
 
 export default function AssessmentResultsPage({
   params,
@@ -36,6 +38,7 @@ export default function AssessmentResultsPage({
   const resolvedParams = use(params);
   const id = resolvedParams.id;
 
+  const resultsRequest = useRef(0);
   const [data, setData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -74,14 +77,16 @@ export default function AssessmentResultsPage({
   };
 
   const fetchResults = async () => {
+    const request = ++resultsRequest.current;
     setIsLoading(true);
     try {
       const res = await adminAssessmentsAPI.getResults(id);
-      setData(res.data);
+      if (request === resultsRequest.current) setData(res.data);
     } catch (err) {
       console.error("Failed to load results:", err);
+      if (request === resultsRequest.current) setData(null);
     } finally {
-      setIsLoading(false);
+      if (request === resultsRequest.current) setIsLoading(false);
     }
   };
 
@@ -90,62 +95,19 @@ export default function AssessmentResultsPage({
   }, [id]);
 
   const handleExportCSV = () => {
-    if (!data || !data.attempts || data.attempts.length === 0) return;
-
-    const headers = [
-      "Student UID",
-      "Student Name",
-      "Email",
-      "Total Attempts",
-      "Best Score",
-      "All Scores Breakdown",
-      "Max Score",
-      "Percentage",
-      "Result",
-      "Total Attempted",
-      "Total Correct",
-      "Total Wrong",
-      "Accuracy (%)",
-      "Time Spent (sec)",
-      "Tab Switches",
-      "Total Violations",
-      "Submitted At",
-    ];
-
-    const rows = data.attempts.map((a: any) => [
-      a.studentUid,
-      `"${a.studentName}"`,
-      a.studentEmail,
-      a.totalAttempts || a.allAttempts?.length || 1,
-      a.score,
-      `"${(a.allAttempts || []).map((att: any) => `#${att.attemptNumber}: ${att.score}pts`).join(" | ") || a.score}"`,
-      a.maxScore,
-      `${a.percentage}%`,
-      a.passed ? "PASSED" : "FAILED",
-      a.totalAttempted,
-      a.totalCorrect,
-      a.totalWrong,
-      `${a.accuracy}%`,
-      a.timeSpentSeconds,
-      a.tabSwitchCount || 0,
-      a.violations?.length || 0,
-      a.submittedAt ? new Date(a.submittedAt).toISOString() : "IN_PROGRESS",
-    ]);
-
-    const csvContent =
-      "data:text/csv;charset=utf-8," +
-      [headers.join(","), ...rows.map((e: any[]) => e.join(","))].join("\n");
-
-    const encodedUri = encodeURI(csvContent);
+    if (isLoading || !data) return;
+    const rows = viewMode === "candidates" ? filteredAttempts : filteredRawAttempts;
+    if (!rows.length) { toast.error("No results match the selected view and search."); return; }
+    const content = assessmentResultsCSV(data.assessment || {}, rows, viewMode);
+    const url = URL.createObjectURL(new Blob([content], { type: "text/csv;charset=utf-8;" }));
     const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute(
-      "download",
-      `assessment_results_${data?.assessment?.code || id}.csv`
-    );
+    link.href = url;
+    const code = String(data.assessment?.code || id).replace(/[^a-zA-Z0-9_-]/g, "_");
+    link.download = `assessment_results_${code}_${viewMode === "candidates" ? "summary" : "all_attempts"}.csv`;
     document.body.appendChild(link);
     link.click();
-    document.body.removeChild(link);
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
   };
 
   const filteredAttempts = (data?.attempts || []).filter((a: any) => {
@@ -229,6 +191,7 @@ export default function AssessmentResultsPage({
           </Link>
           <button
             onClick={handleExportCSV}
+            title="Export the selected results view and current search"
             disabled={!data?.attempts || data.attempts.length === 0}
             className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold rounded-md border border-slate-200 transition-colors disabled:opacity-50"
           >
@@ -361,7 +324,7 @@ export default function AssessmentResultsPage({
                   <th className="p-3.5 text-center">Time Spent</th>
                   <th className="p-3.5 text-center">Proctoring Telemetry</th>
                   <th className="p-3.5 text-center">Report</th>
-                  <th className="p-3.5 text-right">Submitted At</th>
+                  <th className="p-3.5 text-right">Submitted At (IST)</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -372,11 +335,11 @@ export default function AssessmentResultsPage({
                   return (
                     <tr key={att._id} className="hover:bg-muted/20 transition-colors">
                       <td className="p-3.5">
-                        <div className="font-semibold text-foreground">{att.studentName}</div>
-                        <div className="text-[11px] text-muted-foreground">{att.studentEmail}</div>
+                        <div className="font-semibold text-foreground">{resultText(att.studentName)}</div>
+                        <div className="text-[11px] text-muted-foreground">{resultText(att.studentEmail)}</div>
                       </td>
                       <td className="p-3.5 font-mono font-medium text-foreground">
-                        {att.studentUid}
+                        {resultText(att.studentUid)}
                       </td>
                       <td className="p-3.5 text-center font-mono">
                         <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-muted border border-border">
@@ -465,7 +428,7 @@ export default function AssessmentResultsPage({
                         </button>
                       </td>
                       <td className="p-3.5 text-right font-mono text-[11px]">
-                        {att.submittedAt ? new Date(att.submittedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "In Progress"}
+                        {att.submittedAt ? formatIndianDateTime(att.submittedAt) : "In Progress"}
                       </td>
                     </tr>
                   );
@@ -488,7 +451,7 @@ export default function AssessmentResultsPage({
                   <th className="p-3.5 text-center">Time Spent</th>
                   <th className="p-3.5 text-center">Proctoring Telemetry</th>
                   <th className="p-3.5 text-center">Report</th>
-                  <th className="p-3.5 text-right">Timestamp</th>
+                  <th className="p-3.5 text-right">Timestamp (IST)</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -499,11 +462,11 @@ export default function AssessmentResultsPage({
                   return (
                     <tr key={att._id || idx} className="hover:bg-muted/20 transition-colors">
                       <td className="p-3.5">
-                        <div className="font-semibold text-foreground">{att.studentName}</div>
-                        <div className="text-[11px] text-muted-foreground">{att.studentEmail}</div>
+                        <div className="font-semibold text-foreground">{resultText(att.studentName)}</div>
+                        <div className="text-[11px] text-muted-foreground">{resultText(att.studentEmail)}</div>
                       </td>
                       <td className="p-3.5 font-mono font-medium text-foreground">
-                        {att.studentUid}
+                        {resultText(att.studentUid)}
                       </td>
                       <td className="p-3.5 text-center font-mono">
                         <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-primary/10 text-primary border border-primary/20">
@@ -566,7 +529,7 @@ export default function AssessmentResultsPage({
                         </button>
                       </td>
                       <td className="p-3.5 text-right font-mono text-[11px]">
-                        {att.submittedAt ? new Date(att.submittedAt).toLocaleString([], { dateStyle: "short", timeStyle: "short" }) : "In Progress"}
+                        {att.submittedAt ? formatIndianDateTime(att.submittedAt) : "In Progress"}
                       </td>
                     </tr>
                   );
@@ -700,7 +663,7 @@ export default function AssessmentResultsPage({
                         </div>
                       </div>
                       <span className="text-[10px] font-mono text-muted-foreground shrink-0">
-                        {v.timestamp ? new Date(v.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : "Logged"}
+                        {v.timestamp ? formatIndianDateTime(v.timestamp, true) : "Logged"}
                       </span>
                     </div>
                   ))
@@ -800,7 +763,7 @@ export default function AssessmentResultsPage({
                               Score: {attItem.score} / {attItem.maxScore || selectedCandidate.maxScore} pts ({attItem.percentage}%)
                             </span>
                             <span className="text-[10px] text-muted-foreground block">
-                              {attItem.submittedAt ? new Date(attItem.submittedAt).toLocaleString() : attItem.status} • {Math.floor((attItem.timeSpentSeconds || 0) / 60)}m {attItem.timeSpentSeconds % 60}s spent
+                              {attItem.submittedAt ? formatIndianDateTime(attItem.submittedAt) : attItem.status} • {Math.floor((attItem.timeSpentSeconds || 0) / 60)}m {attItem.timeSpentSeconds % 60}s spent
                             </span>
                           </div>
                         </div>

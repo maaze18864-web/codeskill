@@ -745,14 +745,25 @@ export class AuthService {
       reason: 'force_change',
     });
 
+    const refreshedUser = await this.userRepository.findOne({
+      where: { id: user.id },
+    });
+    const tokens = await this.tokenService.issueTokens(refreshedUser || user);
+
     return {
       success: true,
+      token: tokens.token,
+      refreshToken: tokens.refreshToken,
+      expiresIn: tokens.expiresIn,
       message: 'Password successfully updated',
       user: {
         id: user.id,
         name: user.name,
         email: user.email,
+        role: user.role || (user.isAdmin ? 'admin' : 'student'),
+        isAdmin: user.isAdmin,
         uid: user.uid,
+        isAssessmentStudent: user.isAssessmentStudent || false,
         forcePasswordChange: false,
       },
     };

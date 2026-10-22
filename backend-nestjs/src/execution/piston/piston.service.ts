@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   OnModuleDestroy,
   Optional,
 } from '@nestjs/common';
@@ -22,6 +23,7 @@ import {
 
 @Injectable()
 export class PistonService implements OnModuleDestroy {
+  private readonly logger = new Logger(PistonService.name);
   readonly config = pistonConfig();
   private readonly clients = new Map<string, AxiosInstance>();
   private readonly registries = new Map<
@@ -94,36 +96,53 @@ export class PistonService implements OnModuleDestroy {
   private async registry(url: string, force = false): Promise<PistonRuntime[]> {
     const cached = this.registries.get(url);
     if (cached?.pending) return cached.pending;
-    if (!force && cached && Date.now() - cached.at < this.config.cacheTtl)
+    if (
+      !force &&
+      cached &&
+      cached.value.length > 0 &&
+      Date.now() - cached.at < this.config.cacheTtl
+    )
       return cached.value;
     const state = {
-      at: 0,
-      value: [] as PistonRuntime[],
+      at: cached?.at ?? 0,
+      value: cached?.value ?? ([] as PistonRuntime[]),
       pending: undefined as Promise<PistonRuntime[]> | undefined,
     };
     this.registries.set(url, state);
     state.pending = (async () => {
-      const { data } = await this.clients.get(url)!.get<unknown>('/runtimes', {
-        timeout: Math.min(
-          this.config.discoveryTimeout,
-          this.config.requestTimeout,
-        ),
-      });
-      if (
-        !Array.isArray(data) ||
-        data.some(
-          (r: PistonRuntime) =>
-            !r ||
-            typeof r.language !== 'string' ||
-            typeof r.version !== 'string' ||
-            !Array.isArray(r.aliases) ||
-            r.aliases.some((a: unknown) => typeof a !== 'string'),
+      try {
+        const { data } = await this.clients.get(url)!.get<unknown>('/runtimes', {
+          timeout: Math.min(
+            this.config.discoveryTimeout,
+            this.config.requestTimeout,
+          ),
+        });
+        if (
+          !Array.isArray(data) ||
+          data.some(
+            (r: PistonRuntime) =>
+              !r ||
+              typeof r.language !== 'string' ||
+              typeof r.version !== 'string' ||
+              !Array.isArray(r.aliases) ||
+              r.aliases.some((a: unknown) => typeof a !== 'string'),
+          )
         )
-      )
-        throw new PistonUnavailableError();
-      state.value = data as PistonRuntime[];
-      state.at = Date.now();
-      return state.value;
+          throw new PistonUnavailableError();
+        state.value = data as PistonRuntime[];
+        state.at = Date.now();
+        return state.value;
+      } catch (err) {
+        if (cached && cached.value.length > 0) {
+          this.logger.warn(
+            `Failed to refresh Piston runtimes from ${url}: ${(err as Error).message}. Serving stale cache.`,
+          );
+          state.value = cached.value;
+          state.at = cached.at;
+          return state.value;
+        }
+        throw err;
+      }
     })();
     try {
       return await state.pending;
@@ -135,7 +154,21 @@ export class PistonService implements OnModuleDestroy {
     return this.pool.inspect((url) => this.registry(url, force));
   }
   async availableLanguages() {
-    const registry = await this.runtimes();
+    let registry: PistonRuntime[];
+    try {
+      registry = await this.runtimes();
+    } catch (err) {
+      this.logger.warn(
+        `Failed to discover Piston runtimes: ${(err as Error).message}. Falling back to configured versions.`,
+      );
+      return ['c', 'cpp', 'java', 'python', 'javascript', 'typescript'].map(
+        (language) => ({
+          language,
+          version: this.config.versions[language],
+          enabled: !!this.config.versions[language],
+        }),
+      );
+    }
     return ['c', 'cpp', 'java', 'python', 'javascript', 'typescript'].map(
       (language) => {
         const runtime = registry.find(
@@ -177,6 +210,11 @@ export class PistonService implements OnModuleDestroy {
           Number.isFinite(value)
             ? Math.max(minimum, Math.min(fallback, Number(value)))
             : fallback;
+        const isJava = canonical === 'java';
+        const timeMultiplier = isJava
+          ? Math.max(this.config.timeMultiplier, 2)
+          : this.config.timeMultiplier;
+        const memoryFloor = isJava ? 384 * 1048576 : 33554432;
         const request: PistonRequest = {
           language: runtime.language,
           version: runtime.version,
@@ -186,9 +224,9 @@ export class PistonService implements OnModuleDestroy {
             bounded(
               limits.timeLimit === undefined
                 ? undefined
-                : limits.timeLimit * this.config.timeMultiplier,
-              this.config.runTimeout,
-              100,
+                : limits.timeLimit * timeMultiplier,
+              isJava ? Math.max(this.config.runTimeout, 5000) : this.config.runTimeout,
+              isJava ? 2000 : 100,
             ),
           ),
           compile_timeout: this.config.compileTimeout,
@@ -198,7 +236,7 @@ export class PistonService implements OnModuleDestroy {
                 ? undefined
                 : limits.memoryLimit * 1048576,
               this.config.memory,
-              33554432,
+              memoryFloor,
             ),
           ),
           compile_memory_limit: this.config.compileMemory,

@@ -166,7 +166,9 @@ export class StudentsService {
       role: 'student',
       isAssessmentStudent: true,
       forcePasswordChange:
-        dto.forcePasswordChange !== undefined ? dto.forcePasswordChange : true,
+        dto.forcePasswordChange !== undefined
+          ? dto.forcePasswordChange
+          : !dto.password,
       isActive: dto.isActive !== undefined ? dto.isActive : true,
       studentProfile: dto.studentProfile || {},
       authProvider: 'local',
@@ -195,6 +197,7 @@ export class StudentsService {
     return {
       student: { ...studentJson, _id: student.id },
       generatedPassword: !dto.password ? rawPassword : null,
+      initialPassword: rawPassword,
     };
   }
 
@@ -330,6 +333,7 @@ export class StudentsService {
     const salt = await bcrypt.genSalt(10);
     student.password = await bcrypt.hash(tempPassword, salt);
     student.forcePasswordChange = true;
+    student.tokenVersion = (student.tokenVersion || 0) + 1;
     await this.userRepository.save(student);
 
     const audit = this.auditLogRepo.create({
@@ -355,6 +359,8 @@ export class StudentsService {
       email: student.email,
       name: student.name,
       forcePasswordChange: true,
+      temporaryPassword: tempPassword,
+      generatedPassword: tempPassword,
     };
   }
 

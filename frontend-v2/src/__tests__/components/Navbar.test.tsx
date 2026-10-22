@@ -43,23 +43,20 @@ describe('Navbar Component', () => {
     // Brand logo
     expect(screen.getByText('CodeSkill')).toBeInTheDocument();
 
-    // 6 Core Navigation Links
+    // 5 Core Navigation Links
     expect(screen.getByRole('link', { name: 'Problems', exact: true })).toHaveAttribute('href', '/problems');
     expect(screen.getByRole('link', { name: 'Assessments', exact: true })).toHaveAttribute('href', '/assessments');
     expect(screen.getByRole('link', { name: 'Contests', exact: true })).toHaveAttribute('href', '/contests');
-    expect(screen.getByRole('link', { name: 'Contests Leaderboard', exact: true })).toHaveAttribute('href', '/contests/leaderboard');
+    expect(screen.queryByRole('link', { name: 'Contests Leaderboard', exact: true })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Leaderboard', exact: true })).toHaveAttribute('href', '/leaderboard');
     expect(screen.getByRole('link', { name: 'Dashboard', exact: true })).toHaveAttribute('href', '/dashboard');
   });
 
-  it('renders Log In and Get Started buttons for guests on desktop', () => {
+  it('renders Get Started button for guests on desktop', () => {
     jest.mocked(useAuth).mockReturnValue({ user: null, logout: jest.fn() } as ReturnType<typeof useAuth>);
     render(<Navbar />);
 
-    // In closed mobile menu state, only 1 desktop Log In button exists
-    const loginLinks = screen.getAllByRole('link', { name: 'Log In' });
-    expect(loginLinks.length).toBe(1);
-    expect(loginLinks[0]).toHaveAttribute('href', '/login');
+    expect(screen.queryByRole('link', { name: 'Log In' })).not.toBeInTheDocument();
 
     const getStartedLinks = screen.getAllByRole('link', { name: /Get Started/i });
     expect(getStartedLinks.length).toBe(1);
@@ -194,12 +191,12 @@ describe('Navbar Component', () => {
       expect(screen.getByRole('link', { name: 'Problems' })).toBeInTheDocument();
       expect(screen.getByRole('link', { name: 'Assessments' })).toBeInTheDocument();
       expect(screen.getByRole('link', { name: 'Contests' })).toBeInTheDocument();
-      expect(screen.getByRole('link', { name: 'Contests Leaderboard' })).toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Contests Leaderboard' })).not.toBeInTheDocument();
       expect(screen.getByRole('link', { name: 'Leaderboard' })).toBeInTheDocument();
       expect(screen.getByRole('link', { name: 'Dashboard' })).toBeInTheDocument();
     });
 
-    it('verifies wide desktop layout at 1440px: clean alignment and all 6 links visible', () => {
+    it('verifies wide desktop layout at 1440px: clean alignment and links visible', () => {
       act(() => {
         window.innerWidth = 1440;
       });
@@ -208,7 +205,7 @@ describe('Navbar Component', () => {
 
       const desktopNav = screen.getByRole('navigation');
       expect(desktopNav).toHaveClass('lg:flex');
-      expect(screen.getByRole('link', { name: 'Log In' })).toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: 'Log In' })).not.toBeInTheDocument();
       expect(screen.getByRole('link', { name: /Get Started/i })).toBeInTheDocument();
     });
   });

@@ -14,6 +14,24 @@ export function canonicalEditorLanguage(value: string): string {
   );
 }
 
+export function questionStarterCode(
+  source: string | Array<{ language: string; code: string }> | Record<string, string> | undefined,
+  language: string,
+  questionLanguage?: string,
+): string | undefined {
+  if (typeof source === "string") {
+    return !questionLanguage || canonicalEditorLanguage(questionLanguage) === canonicalEditorLanguage(language)
+      ? source
+      : undefined;
+  }
+  if (Array.isArray(source)) {
+    return source.find((entry) => canonicalEditorLanguage(entry.language) === canonicalEditorLanguage(language))?.code;
+  }
+  return Object.entries(source ?? {}).find(
+    ([key, code]) => canonicalEditorLanguage(key) === canonicalEditorLanguage(language) && typeof code === "string",
+  )?.[1];
+}
+
 /** Imported Python templates use python3; Monaco uses python. */
 export function editorStarterCode(value: Record<string, unknown> | undefined, language: string): string | undefined {
   const entry = Object.entries(value ?? {}).find(

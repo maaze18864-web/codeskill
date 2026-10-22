@@ -13,6 +13,7 @@ import { LeaderboardPreview } from "@/components/landing/LeaderboardPreview";
 import { InteractiveListSection } from "@/components/landing/InteractiveListSection";
 import { TopicsPreview } from "@/components/landing/TopicsPreview";
 import { FinalCTA } from "@/components/landing/FinalCTA";
+import { QuoteOrbit } from "@/components/landing/QuoteOrbit";
 
 export default function Home() {
   return (
@@ -30,6 +31,7 @@ export default function Home() {
       <LeaderboardPreview />
       <InteractiveListSection />
       <FinalCTA />
+      <QuoteOrbit />
     </div>
   );
 }

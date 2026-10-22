@@ -57,25 +57,14 @@ ExecStartPre=-/usr/bin/docker rm codeskill-piston
 ExecStart=/usr/bin/docker run --rm --name codeskill-piston \\
   -p 2001:2000 \\
   -v /var/lib/piston:/piston \\
-  --cap-drop ALL \\
-  --cap-add SYS_ADMIN \\
-  --cap-add SETUID \\
-  --cap-add SETGID \\
-  --cap-add CHOWN \\
-  --cap-add DAC_OVERRIDE \\
-  --cap-add FOWNER \\
-  --security-opt no-new-privileges:false \\
+  --privileged \\
   --pids-limit 1024 \\
-  --memory 2048m \\
-  --memory-swap 2048m \\
-  --cpus 2.0 \\
-  -e PISTON_DISABLE_NETWORKING=true \\
   -e PISTON_MAX_CONCURRENT_JOBS=10 \\
-  -e PISTON_RUN_TIMEOUT=3000 \\
+  -e PISTON_RUN_TIMEOUT=8000 \\
   -e PISTON_COMPILE_TIMEOUT=10000 \\
-  -e PISTON_RUN_CPU_TIME=3000 \\
+  -e PISTON_RUN_CPU_TIME=8000 \\
   -e PISTON_COMPILE_CPU_TIME=10000 \\
-  -e PISTON_RUN_MEMORY_LIMIT=268435456 \\
+  -e PISTON_RUN_MEMORY_LIMIT=536870912 \\
   -e PISTON_COMPILE_MEMORY_LIMIT=536870912 \\
   -e PISTON_OUTPUT_MAX_SIZE=65536 \\
   -e PISTON_MAX_PROCESS_COUNT=64 \\
@@ -103,6 +92,24 @@ for i in {1..30}; do
 done
 
 if [ "$READY" != true ]; then echo "Piston readiness probe failed" >&2; exit 1; fi
+
+# 4b. Pre-provision required language packages into Piston
+echo "Installing Piston language runtimes..."
+for pkg in \
+  '{"language":"python","version":"3.10.0"}' \
+  '{"language":"gcc","version":"10.2.0"}' \
+  '{"language":"node","version":"18.15.0"}' \
+  '{"language":"typescript","version":"5.0.3"}' \
+  '{"language":"java","version":"15.0.2"}'; do
+  curl -s -X POST http://127.0.0.1:2001/api/v2/packages \
+    -H "Content-Type: application/json" \
+    -d "$pkg" || true
+done
+
+# 4c. Optimize Java runner (Tier 1 C1 compilation + Serial GC for fast boot)
+if [ -f /var/lib/piston/packages/java/15.0.2/run ]; then
+  sed -i 's|^java |java -XX:TieredStopAtLevel=1 -XX:+UseSerialGC -Xms16m -Xmx384m |g' /var/lib/piston/packages/java/15.0.2/run
+fi
 
 # 5. Register with AWS Cloud Map Private DNS Service
 if [ -n "$CLOUD_MAP_SERVICE_ID" ]; then

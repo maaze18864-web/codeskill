@@ -138,7 +138,11 @@ describe('Questions Bulk Import & Merge Strategy', () => {
       slug: 'valid-parentheses',
       title: 'Valid Parentheses',
       supportedLanguages: ['cpp', 'java', 'python3'],
-      starterCode: expect.arrayContaining([{ language: 'cpp', code: 'int main() {}' }]),
+      starterCode: [
+        { language: 'cpp', code: 'int main() {}' },
+        { language: 'java', code: 'class Main {}' },
+        { language: 'python3', code: 'def main(): pass' },
+      ],
       referenceSolutions: expect.arrayContaining([{ language: 'python3', sourceCode: 'print(True)' }]),
       testCases: expect.arrayContaining([{ id: '2', input: '{[]}', expectedOutput: 'true', isHidden: true, weight: 1 }]),
       metadata: expect.objectContaining({ timeComplexity: 'O(n)', spaceComplexity: 'O(n)' }),
@@ -445,7 +449,7 @@ describe('Questions Bulk Import & Merge Strategy', () => {
     expect(existingRecord.explanation).toBe('Updated explanation');
   });
 
-  it('mergeStrategy="merge" enriches missing metadata without overwriting correct answers or options', async () => {
+  it('mergeStrategy="merge" refreshes imported starter code while preserving answers and options', async () => {
     const existingRecord = {
       id: 'existing-id-merge',
       question: 'Existing question',
@@ -455,6 +459,7 @@ describe('Questions Bulk Import & Merge Strategy', () => {
       explanation: '', // empty
       subtopic: '', // empty
       tags: ['db'],
+      starterCode: [{ language: 'cpp', code: 'OLD_TEMPLATE' }],
     };
 
     questionRepo.findOne.mockResolvedValue(existingRecord);
@@ -463,7 +468,7 @@ describe('Questions Bulk Import & Merge Strategy', () => {
       {
         rowNumber: 2,
         question: 'Existing question',
-        questionType: 'single_choice',
+        questionType: 'coding',
         topic: 'Databases',
         existingQuestionId: 'existing-id-merge',
         matchStatus: 'exact_duplicate',
@@ -472,6 +477,11 @@ describe('Questions Bulk Import & Merge Strategy', () => {
         explanation: 'Newly provided explanation',
         subtopic: 'Indexing',
         tags: ['b-tree'],
+        starterCode: [
+          { language: 'cpp', code: 'NEW_CPP_TEMPLATE' },
+          { language: 'java', code: 'NEW_JAVA_TEMPLATE' },
+          { language: 'python3', code: 'NEW_PYTHON_TEMPLATE' },
+        ],
       },
     ];
 
@@ -490,5 +500,10 @@ describe('Questions Bulk Import & Merge Strategy', () => {
     expect(existingRecord.explanation).toBe('Newly provided explanation'); // enriched!
     expect(existingRecord.subtopic).toBe('Indexing'); // enriched!
     expect(existingRecord.tags).toContain('b-tree'); // merged!
+    expect(existingRecord.starterCode).toEqual([
+      { language: 'cpp', code: 'NEW_CPP_TEMPLATE' },
+      { language: 'java', code: 'NEW_JAVA_TEMPLATE' },
+      { language: 'python3', code: 'NEW_PYTHON_TEMPLATE' },
+    ]);
   });
 });

@@ -12,6 +12,7 @@ import {
   NotFoundException,
   UseGuards,
   ServiceUnavailableException,
+  Logger,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBody, ApiResponse } from '@nestjs/swagger';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
@@ -28,6 +29,8 @@ import { ExecutionAdmissionService } from './admission/execution-admission.servi
 @UseGuards(JwtAuthGuard, SubmissionRateLimitGuard)
 @Controller('execution')
 export class ExecutionController {
+  private readonly logger = new Logger(ExecutionController.name);
+
   constructor(
     private readonly executionService: ExecutionService,
     @InjectQueue('submissions') private readonly submissionQueue: Queue,
@@ -62,7 +65,11 @@ export class ExecutionController {
   async runtimes() {
     try {
       return await this.executionService.availableLanguages();
-    } catch {
+    } catch (error) {
+      this.logger.error(
+        `Failed to retrieve execution runtimes: ${(error as Error)?.message}`,
+        (error as Error)?.stack,
+      );
       throw new ServiceUnavailableException(
         'Code execution is temporarily unavailable',
       );

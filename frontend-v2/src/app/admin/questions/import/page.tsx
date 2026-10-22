@@ -51,7 +51,7 @@ export default function ImportQuestionsPage() {
   const [isValidating, setIsValidating] = useState(false);
   const [isCommitting, setIsCommitting] = useState(false);
   const [instantPush, setInstantPush] = useState(false);
-  const [mergeStrategy, setMergeStrategy] = useState<"skip" | "update" | "merge">("skip");
+  const [mergeStrategy, setMergeStrategy] = useState<"skip" | "update" | "merge">("merge");
   const [activeTab, setActiveTab] = useState<"all" | "new" | "duplicates" | "conflicts" | "errors">("all");
   const [previewData, setPreviewData] = useState<PreviewData | null>(null);
   const [selectedSheet, setSelectedSheet] = useState("");
@@ -422,7 +422,7 @@ export default function ImportQuestionsPage() {
               <span className="text-xs font-bold text-foreground">Merge Missing Details</span>
             </div>
             <p className="text-[11px] text-muted-foreground mt-1.5">
-              Preserves existing options and correct answers, only filling in missing explanations and tags.
+              Preserves answers and options, fills missing details, and refreshes explicitly uploaded coding starter templates.
             </p>
           </label>
         </div>

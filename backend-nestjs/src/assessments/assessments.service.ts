@@ -962,12 +962,20 @@ export class AssessmentsService {
         studentName: a.studentName,
         studentEmail: a.studentEmail,
         attemptNumber: a.attemptNumber || idx + 1,
+        rawScore: a.rawScore,
+        proctoringPenalty: a.proctoringPenalty,
+        totalAttempted: a.totalAttempted,
+        totalCorrect: a.totalCorrect,
+        totalWrong: a.totalWrong,
+        totalSkipped: a.totalSkipped,
+        accuracy: a.accuracy,
+        startedAt: a.startedAt,
         score: a.score ?? 0,
         maxScore: a.maxScore || assessment.totalMarks || 100,
         percentage: a.percentage ?? 0,
         passed: a.passed,
         status: a.status,
-        submittedAt: a.submittedAt || (a as any).createdAt || a.startedAt,
+        submittedAt: a.submittedAt || null,
         timeSpentSeconds: a.timeSpentSeconds || 0,
         tabSwitchCount: a.tabSwitchCount || 0,
         violations: a.violations || [],
@@ -1474,10 +1482,10 @@ export class AssessmentsService {
           marks: q.marks || 1,
           negativeMarks: assessment.negativeMarking ? q.negativeMarks || 0 : 0,
           options: optionOrder ? optionOrder.map((index) => options[index]) : options,
+          starterCode: Array.isArray(q.starterCode)
+            ? q.starterCode
+            : (q.metadata as any)?.starterCode || [],
           codeSnippet: q.codeSnippet,
-          starterCode:
-            (q.metadata as any)?.starterCode ||
-            (q.questionType === 'coding' ? q.codeSnippet || '' : ''),
           language: q.language || 'python',
           constraints:
             Array.isArray(q.constraints) && q.constraints.length > 0

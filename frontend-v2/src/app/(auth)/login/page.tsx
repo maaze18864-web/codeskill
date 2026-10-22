@@ -62,6 +62,8 @@ export default function AppLoginPage() {
         window.location.href = "/admin/dashboard";
       } else if (isTeacher) {
         window.location.href = "/teacher/dashboard";
+      } else if (res?.user?.isAssessmentStudent) {
+        window.location.href = "/assessments";
       } else {
         window.location.href = "/dashboard";
       }
@@ -73,13 +75,14 @@ export default function AppLoginPage() {
   const onForcePasswordSubmit = async (data: ForcePasswordFormValues) => {
     setLoading(true);
     try {
-      await forceChangePassword({
+      const res = await forceChangePassword({
         currentPassword: data.currentPassword,
         newPassword: data.newPassword,
       });
       setPasswordChangeSuccess(true);
       setTimeout(() => {
-        router.push("/dashboard");
+        const isAssessment = res?.user?.isAssessmentStudent;
+        router.push(isAssessment ? "/assessments" : "/dashboard");
       }, 1500);
     } catch (err: unknown) {
       const errorMessage = err instanceof Error ? err.message : "Failed to update password. Please try again.";

@@ -188,6 +188,19 @@ describe('Admin password authentication security', () => {
       }),
     );
   });
+
+  it('forceChangePassword updates password, clears forcePasswordChange, invalidates old sessions and issues fresh tokens', async () => {
+    const res = await service.forceChangePassword(admin.id, {
+      currentPassword: correctPassword,
+      newPassword: 'BrandNewPassword123!',
+    });
+    expect(res.success).toBe(true);
+    expect(res.token).toBe('fixture-only-token');
+    expect(res.refreshToken).toBe('fixture-only-refresh-token');
+    expect(res.user.forcePasswordChange).toBe(false);
+    expect(tokens.invalidateUserSessions).toHaveBeenCalledWith(admin.id);
+    expect(tokens.issueTokens).toHaveBeenCalled();
+  });
 });
 
 describe('Admin password login request validation', () => {

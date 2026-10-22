@@ -36,7 +36,7 @@ describe('Piston contract client (mock transport, not sandbox verification)', ()
   const run = () => service.execute('py', 'main.py', 'print(30)', '10 20');
   it('uses a short discovery timeout instead of waiting for a compiler deadline', async () => {
     await run();
-    expect(get).toHaveBeenCalledWith('/runtimes', { timeout: 2000 });
+    expect(get).toHaveBeenCalledWith('/runtimes', { timeout: 6000 });
   });
   it('uses a discovered exact runtime, bounded API limits, correlation ID and no expected answer', async () => {
     await run();
@@ -46,9 +46,9 @@ describe('Piston contract client (mock transport, not sandbox verification)', ()
       version: '3.12.0',
       files: [{ name: 'main.py', content: 'print(30)' }],
       stdin: '10 20',
-      run_timeout: 3000,
+      run_timeout: 8000,
       compile_timeout: 10000,
-      run_memory_limit: 268435456,
+      run_memory_limit: 536870912,
       compile_memory_limit: 536870912,
     });
     expect(post.mock.calls[0][2].headers['X-Correlation-ID']).toMatch(
@@ -127,8 +127,8 @@ describe('Piston contract client (mock transport, not sandbox verification)', ()
       timeLimit: 999999,
       memoryLimit: 999999,
     });
-    expect(post.mock.calls[0][1].run_timeout).toBe(3000);
-    expect(post.mock.calls[0][1].run_memory_limit).toBe(268435456);
+    expect(post.mock.calls[0][1].run_timeout).toBe(8000);
+    expect(post.mock.calls[0][1].run_memory_limit).toBe(536870912);
   });
   it.each([
     null,
@@ -160,5 +160,17 @@ describe('Piston contract client (mock transport, not sandbox verification)', ()
     await expect(
       service.execute('python', 'main.py', 'x', 'x'.repeat(262145)),
     ).rejects.toBeInstanceOf(BadRequestException);
+  });
+  it('falls back to configured runtime versions when discovery fails on cold boot', async () => {
+    get.mockRejectedValueOnce(new Error('timeout'));
+    const languages = await service.availableLanguages();
+    const py = languages.find((l) => l.language === 'python');
+    expect(py).toEqual({ language: 'python', version: '3.12.0', enabled: true });
+  });
+  it('serves stale cache when discovery refresh fails after initial success', async () => {
+    await service.runtimes();
+    get.mockRejectedValueOnce(new Error('timeout'));
+    const runtimes = await service.runtimes(true);
+    expect(runtimes).toEqual(registry);
   });
 });

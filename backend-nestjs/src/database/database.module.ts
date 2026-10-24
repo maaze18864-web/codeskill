@@ -2,6 +2,7 @@ import { parseSubmissionShardingConfig } from './sharding/sharding.config';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigService } from '@nestjs/config';
+import { DatabaseAutoMigrationService } from './database-auto-migration.service';
 
 import { User } from './entities/user.entity';
 import { Problem } from './entities/problem.entity';
@@ -37,6 +38,24 @@ import { BugImage } from './entities/bug-image.entity';
 import { BugComment } from './entities/bug-comment.entity';
 import { BugActivity } from './entities/bug-activity.entity';
 import { QuestionBulkUploadBatch } from './entities/question-bulk-upload-batch.entity';
+import {
+  LearningPath,
+  LearningPathCourse,
+  Course,
+  CourseModule,
+  Lesson,
+  CourseExercise,
+  LearningEnrollment,
+  LessonProgress,
+  CourseProgress,
+  PathProgress,
+  XPLedger,
+  BadgeDefinition,
+  StudentBadge,
+  CertificateTemplate,
+  Certificate,
+  CertificateEvent,
+} from '../learning/entities';
 
 const entities = [
   User,
@@ -73,6 +92,22 @@ const entities = [
   EmailJob,
   ExamSession,
   ExamSecurityEvent,
+  LearningPath,
+  LearningPathCourse,
+  Course,
+  CourseModule,
+  Lesson,
+  CourseExercise,
+  LearningEnrollment,
+  LessonProgress,
+  CourseProgress,
+  PathProgress,
+  XPLedger,
+  BadgeDefinition,
+  StudentBadge,
+  CertificateTemplate,
+  Certificate,
+  CertificateEvent,
 ];
 
 @Module({
@@ -146,6 +181,7 @@ const entities = [
     }),
     TypeOrmModule.forFeature(entities),
   ],
-  exports: [TypeOrmModule],
+  providers: [DatabaseAutoMigrationService],
+  exports: [TypeOrmModule, DatabaseAutoMigrationService],
 })
 export class DatabaseModule { }

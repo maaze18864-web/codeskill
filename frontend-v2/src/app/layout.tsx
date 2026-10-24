@@ -83,11 +83,14 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: antiFlashScript }}
         />
       </head>
-      <body className="min-h-screen flex flex-col font-sans bg-background text-foreground transition-colors duration-200">
+      <body
+        className="min-h-screen flex flex-col font-sans bg-background text-foreground transition-colors duration-200"
+        suppressHydrationWarning
+      >
         <Providers>
           <Background />
           <Navbar />
-          <main className="flex-1 flex flex-col">
+          <main className="flex-1 flex flex-col w-full max-w-full overflow-x-clip">
             <TelemetryBoundary>
               {children}
             </TelemetryBoundary>

@@ -15,23 +15,32 @@ jest.mock('next/navigation', () => ({
 import { usePathname } from 'next/navigation';
 
 describe('Footer Component', () => {
-  it('renders correctly on normal pages', () => {
-    // @ts-ignore
-    usePathname.mockReturnValue('/');
-    
-    render(<Footer />);
-    
+  it('renders correctly on landing page with giant typography', () => {
+    jest.mocked(usePathname).mockReturnValue('/');
+
+    const { container } = render(<Footer />);
+
     // Check for logo text or trademark
     expect(screen.getByText(/© 2026/i)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Privacy Policy', exact: true })).toBeInTheDocument();
+    expect(container.querySelector('#giant')).toBeInTheDocument();
+  });
+
+  it('renders standard footer without giant typography on non-landing pages', () => {
+    jest.mocked(usePathname).mockReturnValue('/contests');
+
+    const { container } = render(<Footer />);
+
+    expect(screen.getByText(/© 2026/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Privacy Policy', exact: true })).toBeInTheDocument();
+    expect(container.querySelector('#giant')).not.toBeInTheDocument();
   });
 
   it('hides the footer on workspace/editor pages', () => {
-    // @ts-ignore
-    usePathname.mockReturnValue('/problems/two-sum');
-    
+    jest.mocked(usePathname).mockReturnValue('/problems/two-sum');
+
     const { container } = render(<Footer />);
-    
+
     // It should render null (nothing)
     expect(container.firstChild).toBeNull();
   });

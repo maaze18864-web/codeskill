@@ -75,6 +75,10 @@ function setup(
   };
   const questions = {
     find: jest.fn().mockResolvedValue(bankQuestions),
+    findOne: jest.fn().mockResolvedValue(null),
+  };
+  const metadata = {
+    findOne: jest.fn().mockResolvedValue(null),
   };
   return {
     service: new ContestsService(
@@ -84,11 +88,13 @@ function setup(
       submissions as never,
       undefined,
       questions as never,
+      metadata as never,
     ),
     contests,
     attempts,
     problems,
     questions,
+    metadata,
     builder,
   };
 }
@@ -258,6 +264,37 @@ it('creates or resumes a guarded real attempt with canonical published problem I
   expect(problems.getExecutionProblem).toHaveBeenCalledWith(id);
   expect(builder.orIgnore).toHaveBeenCalled();
   expect(result.contest).not.toHaveProperty('participants');
+});
+it('resolves Question Bank questions when execution lookup fails (e.g. MCQ or contest-only)', async () => {
+  const { service, problems, questions } = setup();
+  problems.getExecutionProblem.mockRejectedValue(new NotFoundException('Problem not found'));
+  questions.findOne.mockResolvedValue({
+    id,
+    question: 'Sample MCQ Question?',
+    title: 'Sample MCQ',
+    slug: 'sample-mcq',
+  });
+  const result = await service.startAttempt(id, userId);
+  expect(result).toMatchObject({
+    sessionId: 'real-session',
+    problems: [{ id, title: 'Sample MCQ', slug: 'sample-mcq' }],
+  });
+  expect(questions.findOne).toHaveBeenCalled();
+});
+it('resolves ProblemMetadata questions when execution and Question lookups fail', async () => {
+  const { service, problems, metadata } = setup();
+  problems.getExecutionProblem.mockRejectedValue(new NotFoundException('Problem not found'));
+  metadata.findOne.mockResolvedValue({
+    id,
+    title: 'Metadata Problem',
+    slug: 'metadata-problem',
+  });
+  const result = await service.startAttempt(id, userId);
+  expect(result).toMatchObject({
+    sessionId: 'real-session',
+    problems: [{ id, title: 'Metadata Problem', slug: 'metadata-problem' }],
+  });
+  expect(metadata.findOne).toHaveBeenCalled();
 });
 it.each(['upcoming', 'ended', 'unregistered', 'unpublished'])(
   'blocks unavailable attempts: %s',

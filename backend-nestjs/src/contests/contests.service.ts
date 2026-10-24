@@ -16,6 +16,7 @@ import { ContestAttempt } from '../database/entities/contest-attempt.entity';
 import { SubmissionStore } from '../database/sharding/submission-store';
 import { ContestReattemptGrant } from '../database/entities/contest-reattempt-grant.entity';
 import { Question } from '../database/entities/question.entity';
+import { ProblemMetadata } from '../database/entities/problem-metadata.entity';
 
 const MCQ_TYPES = ['mcq', 'single_choice', 'multiple_choice', 'true_false'];
 const CODING_TYPES = ['dsa', 'coding', 'algorithmic'];
@@ -53,6 +54,9 @@ export class ContestsService {
     @Optional()
     @InjectRepository(Question)
     private readonly questionRepo?: Repository<Question>,
+    @Optional()
+    @InjectRepository(ProblemMetadata)
+    private readonly problemMetadataRepo?: Repository<ProblemMetadata>,
   ) {}
 
   async getContests() {
@@ -385,34 +389,114 @@ export class ContestsService {
       ? await this.questionRepo.find({ where: { id: In(contest.problems) } })
       : [];
     const questionById = new Map(bankQuestions.map((question) => [question.id, question]));
-    const problems = await Promise.all((contest.problems || []).map(async (problemId) => {
-      const question = questionById.get(problemId);
-      if (question) {
-        if (!isContestQuestionEligible(question))
-          throw new BadRequestException('A selected question is no longer eligible for this contest');
-        const type = contestQuestionType(question);
-        if (type === 'mcq') {
-          if (contest.contestFormat === 'coding')
-            throw new BadRequestException('MCQ questions are not valid for this contest format');
-          return {
-            id: question.id,
-            title: question.title || question.question,
-            slug: question.slug || `question-${question.id}`,
-            question: question.question,
-            questionType: question.questionType,
-            options: question.options || [],
-            marks: question.marks,
-            negativeMarks: question.negativeMarks,
-          };
-        }
-        if (contest.contestFormat === 'mcq')
-          throw new BadRequestException('Coding questions are not valid for this contest format');
-      } else if (contest.contestFormat === 'mcq') {
-        throw new BadRequestException('A selected question is no longer eligible for this contest');
-      }
-      const problem = await this.problemsService.getExecutionProblem(problemId);
-      return { id: problem.id, title: problem.title, slug: problem.slug, questionType: 'coding' };
-    }));
+    const problems = (
+      await Promise.all(
+        (contest.problems || []).map(async (problemId) => {
+          const question = questionById.get(problemId);
+          if (question) {
+            if (!isContestQuestionEligible(question))
+              throw new BadRequestException('A selected question is no longer eligible for this contest');
+            const type = contestQuestionType(question);
+            if (type === 'mcq') {
+              if (contest.contestFormat === 'coding')
+                throw new BadRequestException('MCQ questions are not valid for this contest format');
+              return {
+                id: question.id,
+                title: question.title || question.question,
+                slug: question.slug || `question-${question.id}`,
+                question: question.question,
+                questionType: question.questionType,
+                options: question.options || [],
+                marks: question.marks,
+                negativeMarks: question.negativeMarks,
+              };
+            }
+            if (contest.contestFormat === 'mcq')
+              throw new BadRequestException('Coding questions are not valid for this contest format');
+          } else if (contest.contestFormat === 'mcq') {
+            throw new BadRequestException('A selected question is no longer eligible for this contest');
+          }
+          try {
+            const problem =
+              await this.problemsService.getExecutionProblem(problemId);
+            return { id: problem.id, title: problem.title, slug: problem.slug };
+          } catch {
+            // Execution problem lookup failed (e.g. MCQ or contestOnly non-coding)
+          }
+
+          const isUuid =
+            /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+              problemId,
+            );
+
+          try {
+            const questionRepo =
+              this.questionRepo ||
+              this.contestRepo.manager?.getRepository(Question);
+            if (questionRepo) {
+              const question = await questionRepo.findOne({
+                where: isUuid
+                  ? [{ id: problemId }, { mongoId: problemId }]
+                  : { mongoId: problemId },
+              });
+              if (question) {
+                return {
+                  id: question.id,
+                  title: question.title?.trim() || question.question,
+                  slug: question.slug?.trim() || `question-${question.id}`,
+                };
+              }
+            }
+          } catch {
+            // Ignore question repo lookup failure
+          }
+
+          try {
+            const metadataRepo =
+              this.problemMetadataRepo ||
+              this.contestRepo.manager?.getRepository(ProblemMetadata);
+            if (metadataRepo && isUuid) {
+              const meta = await metadataRepo.findOne({
+                where: { id: problemId },
+              });
+              if (meta) {
+                return {
+                  id: meta.id,
+                  title: meta.title,
+                  slug: meta.slug || `problem-${meta.id}`,
+                };
+              }
+            }
+          } catch {
+            // Ignore metadata repo lookup failure
+          }
+
+          try {
+            const res = await this.problemsService.getProblemBySlug(problemId);
+            if (res?.data?.id) {
+              return {
+                id: res.data.id,
+                title: res.data.title,
+                slug: res.data.slug,
+              };
+            }
+          } catch {
+            // Ignore fallback failure
+          }
+
+          this.logger.warn(
+            `Contest ${contest.id} problem "${problemId}" could not be loaded`,
+          );
+          return null;
+        }),
+      )
+    ).filter(
+      (p): p is { id: string; title: string; slug: string } => p !== null,
+    );
+
+    if (problems.length === 0 && (contest.problems || []).length > 0) {
+      throw new NotFoundException('Problem not found');
+    }
 
     // Create first attempt or ignore if row exists
     await this.attemptRepo

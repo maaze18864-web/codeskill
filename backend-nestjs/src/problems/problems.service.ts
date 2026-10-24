@@ -119,15 +119,23 @@ const bankPublicSql = `lower(q."questionType") IN ('dsa', 'coding', 'algorithmic
   AND lower(q.status) IN ('approved', 'active', 'published')
   AND lower(btrim(q.metadata->>'visibility')) IN ('published', 'public')
   AND coalesce(q.metadata->>'contestOnly', 'false') <> 'true'`;
-function bankPublished(question: Question, allowContestOnly = false) {
+function bankExecutionEligible(question: Question) {
   const metadata = object(question.metadata);
   return (
     codingTypes.includes(text(question.questionType).toLowerCase()) &&
     ['approved', 'active', 'published'].includes(
       text(question.status).toLowerCase(),
     ) &&
-    published(metadata.visibility) &&
-    (allowContestOnly || metadata.contestOnly !== true)
+    published(metadata.visibility)
+  );
+}
+function bankViewEligible(question: Question) {
+  const metadata = object(question.metadata);
+  return (
+    ['approved', 'active', 'published'].includes(
+      text(question.status).toLowerCase(),
+    ) &&
+    published(metadata.visibility)
   );
 }
 function bankSlug(question: Question) {
@@ -264,14 +272,21 @@ export class ProblemsService {
   }
 
   private async metadataBySlug(slug: string) {
+    const isUuid =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        slug,
+      );
     return this.metadataRepository
       .createQueryBuilder('metadata')
       .leftJoinAndSelect('metadata.statement', 'statement')
       .leftJoinAndSelect('metadata.config', 'config')
       .leftJoinAndSelect('metadata.testCases', 'testCases')
-      .where('lower(btrim(metadata.slug)) = :slug', {
-        slug: text(slug).toLowerCase(),
-      })
+      .where(
+        isUuid
+          ? 'metadata.id = :id OR lower(btrim(metadata.slug)) = :slug'
+          : 'lower(btrim(metadata.slug)) = :slug',
+        { id: slug, slug: text(slug).toLowerCase() },
+      )
       .getOne();
   }
 
@@ -381,16 +396,22 @@ export class ProblemsService {
         },
       };
     }
+    const isUuid =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        slug,
+      );
     const question = await this.questionRepository
       .createQueryBuilder('q')
       .where(
-        `lower(q."questionType") IN (:...types) AND lower(${bankSlugSql}) = :slug`,
-        { types: codingTypes, slug: text(slug).toLowerCase() },
+        isUuid
+          ? `q.id = :id OR lower(${bankSlugSql}) = :slug`
+          : `lower(${bankSlugSql}) = :slug`,
+        { id: slug, slug: text(slug).toLowerCase() },
       )
       .getOne();
     if (question) {
       if (
-        !bankPublished(question, allowContestOnly) ||
+        !bankViewEligible(question) ||
         (await this.hasMetadataCounterpart(question))
       )
         throw new NotFoundException('Problem not found');
@@ -398,6 +419,16 @@ export class ProblemsService {
         question.examples,
         question.testCases,
       );
+      let description =
+        question.problemStatement ||
+        question.description ||
+        question.question;
+      if (Array.isArray(question.options) && question.options.length > 0) {
+        const formattedOptions = question.options
+          .map((opt, i) => `${String.fromCharCode(65 + i)}. ${opt}`)
+          .join('\n\n');
+        description = `${description}\n\n### Options\n\n${formattedOptions}`;
+      }
       return {
         data: {
           id: question.id,
@@ -411,10 +442,7 @@ export class ProblemsService {
           createdAt: question.createdAt,
           updatedAt: question.updatedAt,
           statement: {
-            description:
-              question.problemStatement ||
-              question.description ||
-              question.question,
+            description,
             inputFormat: question.inputFormat || '',
             outputFormat: question.outputFormat || '',
             constraints: strings(question.constraints).join('\n'),
@@ -528,8 +556,7 @@ export class ProblemsService {
       if (question) {
         const isContestQuestion = source === 'contest-question';
         if (
-          !bankPublished(question, isContestQuestion) ||
-          (isContestQuestion && question.metadata?.contestOnly !== true) ||
+          !bankExecutionEligible(question) ||
           (await this.hasMetadataCounterpart(question))
         )
           throw new NotFoundException('Problem not found');

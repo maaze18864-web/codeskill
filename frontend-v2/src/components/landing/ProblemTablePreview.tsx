@@ -2,9 +2,12 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Search, CheckCircle2, ArrowRight } from "lucide-react";
+import { Search, ArrowRight } from "lucide-react";
 import { problemsAPI } from "@/config/api";
 import { parsePublicProblemList, type PublicProblem } from "@/lib/public-problems";
+
+import { useProblemProgress } from "@/hooks/useProblemProgress";
+import { ProblemProgressMark } from "@/components/problems/ProblemProgressMark";
 
 const PREVIEW_LIMIT = 5;
 
@@ -18,6 +21,7 @@ export function ProblemTablePreview() {
   const loading = result?.key !== requestKey;
   const problems = loading ? [] : result?.problems ?? [];
   const error = !loading && Boolean(result?.error);
+  const progress = useProblemProgress(problems.map(problem => problem.id));
 
   useEffect(() => {
     const query = search.trim();
@@ -50,9 +54,6 @@ export function ProblemTablePreview() {
             <h2 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground">
               Problems
             </h2>
-            <p className="text-xs sm:text-sm text-neutral-600 dark:text-neutral-400">
-              Curated algorithmic challenges categorized by concept and difficulty.
-            </p>
           </div>
 
           <Link
@@ -98,8 +99,8 @@ export function ProblemTablePreview() {
         </div>
 
         {/* LeetCode-style Problem Table */}
-        <div className="rounded-md border border-border bg-card overflow-hidden">
-          <table className="w-full text-left text-xs border-collapse">
+        <div className="rounded-md border border-border bg-card overflow-x-auto max-w-full">
+          <table className="w-full min-w-[480px] sm:min-w-full text-left text-xs border-collapse">
             <thead>
               <tr className="border-b border-border bg-neutral-50 dark:bg-neutral-900/50 text-neutral-500 font-medium">
                 <th className="py-2.5 px-4 w-10 text-center">Status</th>
@@ -125,11 +126,7 @@ export function ProblemTablePreview() {
                   className="hover:bg-neutral-50 dark:hover:bg-neutral-900/40 transition-colors"
                 >
                   <td className="py-3 px-4 text-center">
-                    {prob.status === "solved" ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 inline-block" />
-                    ) : (
-                      <span className="w-2 h-2 rounded-full bg-neutral-300 dark:bg-neutral-700 inline-block" />
-                    )}
+                    <ProblemProgressMark status={progress[prob.id]} className="w-4 h-4 mx-auto" />
                   </td>
                   <td className="py-3 px-4 font-medium text-foreground">
                     {prob.slug ? <Link href={`/problems/${encodeURIComponent(prob.slug)}`} className="hover:underline">{prob.title}</Link> : prob.title}

@@ -11,6 +11,7 @@ describe('Questions Bulk Import & Merge Strategy', () => {
   let questionBankRepo: any;
   let auditLogRepo: any;
   let cacheService: any;
+  let batchRepo: any;
 
   const admin = { id: 'admin-uuid-1', email: 'admin@codeskill.com' };
 
@@ -19,6 +20,13 @@ describe('Questions Bulk Import & Merge Strategy', () => {
     questionRepo = {
       find: jest.fn().mockResolvedValue([]),
       findOne: jest.fn().mockResolvedValue(null),
+      createQueryBuilder: jest.fn(() => ({
+        select: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        andWhere: jest.fn().mockReturnThis(),
+        getMany: jest.fn().mockResolvedValue([]),
+        getRawMany: jest.fn().mockResolvedValue([]),
+      })),
       create: jest.fn((data: any) => ({ id: 'new-q-uuid', ...data })),
       save: jest.fn((data: any) => Promise.resolve(data)),
       manager: {
@@ -41,6 +49,24 @@ describe('Questions Bulk Import & Merge Strategy', () => {
     };
     cacheService = {
       invalidatePrefix: jest.fn().mockResolvedValue(undefined),
+    };
+    batchRepo = {
+      create: jest.fn((data: any) => data),
+      save: jest.fn(async (data: any) => ({ id: 'batch-uuid-1', createdAt: new Date('2026-10-18T10:00:00.000Z'), ...data })),
+      update: jest.fn().mockResolvedValue({ affected: 1 }),
+      findAndCount: jest.fn().mockResolvedValue([[], 0]),
+    };
+    questionRepo.manager = {
+      getRepository: jest.fn(() => batchRepo),
+      transaction: jest.fn(async (cb: any) => cb({
+        findOne: jest.fn((entityOrOpts: any, maybeOpts?: any) => {
+          const opts = maybeOpts || entityOrOpts;
+          return questionRepo.findOne(opts);
+        }),
+        create: questionRepo.create,
+        save: questionRepo.save,
+        getRepository: jest.fn(() => batchRepo),
+      })),
     };
 
     service = new QuestionsService(
@@ -123,6 +149,66 @@ describe('Questions Bulk Import & Merge Strategy', () => {
     }));
   });
 
+  it('persists a batch, associates newly imported questions, and updates live-schema counts', async () => {
+    const result = await service.confirmQuestionsImport([{
+      rowNumber: 2,
+      question: 'What is 2 + 2?',
+      questionType: 'single_choice',
+      topic: 'Arithmetic',
+      options: [{ text: '4', isCorrect: true }, { text: '5', isCorrect: false }],
+      matchStatus: 'new',
+    }], admin, '', '', 'skip', { fileName: 'arithmetic.csv', totalRows: 1 });
+
+    expect(batchRepo.save).toHaveBeenCalledWith(expect.objectContaining({
+      batchCode: expect.stringMatching(/^#[A-F0-9]{8}$/),
+      batchName: expect.stringMatching(/^#[A-F0-9]{8}$/),
+      questionType: 'MCQ',
+      originalFilename: 'arithmetic.csv',
+      totalQuestions: 1,
+    }));
+    expect(questionRepo.create).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      bulk_upload_batch_id: 'batch-uuid-1',
+    }));
+    expect(batchRepo.update).toHaveBeenCalledWith('batch-uuid-1', expect.objectContaining({
+      successfulQuestions: 1,
+      failedQuestions: 0,
+      status: 'COMPLETED',
+    }));
+    expect(result.batches[0]).toEqual(expect.objectContaining({ id: 'batch-uuid-1', questionType: 'MCQ' }));
+  });
+
+  it.each([
+    { label: 'MCQ', questionType: 'single_choice', slug: 'archived-mcq' },
+    { label: 'coding question', questionType: 'coding', slug: 'archived-coding' },
+  ])('re-imports an archived $label during commit and assigns it to the new batch', async ({ questionType, slug }) => {
+    questionRepo.findOne.mockResolvedValue({
+      id: `archived-${questionType}`,
+      question: 'Re-import me',
+      topic: 'Archived imports',
+      status: 'archived',
+    });
+    const result = await service.confirmQuestionsImport([{
+      rowNumber: 2,
+      question: 'Re-import me',
+      questionType,
+      topic: 'Archived imports',
+      slug,
+      options: questionType === 'coding' ? [] : [{ text: 'A', isCorrect: true }, { text: 'B', isCorrect: false }],
+      matchStatus: 'new',
+    }], admin, '', '', 'skip', { fileName: 'reimport.csv', totalRows: 1 });
+
+    expect(result.insertedCount).toBe(1);
+    expect(questionRepo.create).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      question: 'Re-import me',
+      slug,
+      bulk_upload_batch_id: 'batch-uuid-1',
+    }));
+    expect(batchRepo.update).toHaveBeenCalledWith('batch-uuid-1', expect.objectContaining({
+      successfulQuestions: 1,
+      status: 'COMPLETED',
+    }));
+  });
+
   it.each(['csv', 'xlsx'])('accepts the downloadable coding template as %s', async (extension) => {
     const path = join(
       process.cwd(),
@@ -178,16 +264,21 @@ describe('Questions Bulk Import & Merge Strategy', () => {
 
   it('detects option-aware conflicts when correct answer or options differ', async () => {
     // Database contains an existing question
-    questionRepo.find.mockResolvedValue([
-      {
-        id: 'q-existing-1',
-        question: 'What is the capital of France?',
-        questionType: 'single_choice',
-        topic: 'General Knowledge',
-        options: ['London', 'Paris', 'Berlin', 'Madrid'],
-        correctAnswer: 1, // 'Paris'
-      },
-    ]);
+    const existing = {
+      id: 'q-existing-1',
+      question: 'What is the capital of France?',
+      questionType: 'single_choice',
+      topic: 'General Knowledge',
+      options: ['London', 'Paris', 'Berlin', 'Madrid'],
+      correctAnswer: 1, // 'Paris'
+    };
+    questionRepo.createQueryBuilder.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue([existing]),
+      getRawMany: jest.fn().mockResolvedValue([]),
+    });
 
     const rows = [
       {
@@ -219,6 +310,55 @@ describe('Questions Bulk Import & Merge Strategy', () => {
     expect(result.summary.duplicateCount).toBe(1); // duplicate within file
     expect(result.validRows.length).toBe(1);
     expect(result.validRows[0].matchStatus).toBe('exact_duplicate');
+  });
+
+  it.each([
+    { label: 'MCQ', row: { question: 'Recently archived MCQ stem', title: 'Recently archived MCQ', slug: 'recently-archived-mcq', question_type: 'single_choice', topic: 'Archived imports', option_a: 'A', option_b: 'B', correct_answer: 'A' } },
+    { label: 'coding question', row: { title: 'Recently archived coding stem', slug: 'recently-archived-coding', question_type: 'coding', topic: 'Archived imports', problem_statement: 'A coding prompt', test_input_1: '1', test_expected_output_1: '1' } },
+  ])('allows a soft-deleted $label to be imported again while keeping active duplicate detection', async ({ row }) => {
+    const existingActiveQuestion = {
+      id: 'active-question',
+      question: row.question || row.title,
+      questionType: row.question_type === 'coding' ? 'coding' : 'single_choice',
+      topic: row.topic,
+      slug: row.slug,
+      status: 'approved',
+      options: row.question_type === 'coding' ? [] : ['A', 'B'],
+      correctAnswer: 0,
+    };
+    const queryBuilder = {
+      select: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue([existingActiveQuestion]),
+      getRawMany: jest.fn().mockResolvedValue([{ slug: existingActiveQuestion.slug }]),
+    };
+    questionRepo.createQueryBuilder.mockReturnValue(queryBuilder);
+    const preview = await service.parseAndValidateQuestionsImport(createWorkbookBuffer([row]));
+
+    expect(queryBuilder.andWhere).toHaveBeenCalledWith('question.status != :archived', { archived: 'archived' });
+    expect(preview.summary.exactDuplicateCount).toBe(1);
+    expect(preview.validRows[0].matchStatus).toBe('exact_duplicate');
+  });
+
+  it.each([
+    { label: 'MCQ', row: { question: 'A re-importable archived MCQ', title: 'A re-importable archived MCQ', slug: 'same-archived-slug', question_type: 'single_choice', topic: 'Archived imports', option_a: 'A', option_b: 'B', correct_answer: 'A' } },
+    { label: 'coding question', row: { title: 'A re-importable archived coding question', slug: 'same-archived-slug', question_type: 'coding', topic: 'Archived imports', problem_statement: 'A coding prompt', test_input_1: '1', test_expected_output_1: '1' } },
+  ])('does not let an archived $label slug collision prevent re-import', async ({ row }) => {
+    const archivedSlug = row.slug;
+    const queryBuilder = {
+      select: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue([]),
+      getRawMany: jest.fn().mockResolvedValue([{ slug: archivedSlug }]),
+    };
+    questionRepo.createQueryBuilder.mockReturnValue(queryBuilder);
+    const preview = await service.parseAndValidateQuestionsImport(createWorkbookBuffer([row]));
+
+    expect(preview.summary.newCount).toBe(1);
+    expect(preview.validRows[0].matchStatus).toBe('new');
+    expect(preview.validRows[0].slug).toMatch(new RegExp(`^${archivedSlug}-2$`));
   });
 
   it('mergeStrategy="skip" preserves existing questions and inserts new ones', async () => {

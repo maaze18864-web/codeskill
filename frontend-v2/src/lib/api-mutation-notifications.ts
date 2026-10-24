@@ -40,6 +40,10 @@ function getMutation(path: string, method: string) {
 
   const normalizedPath = path.split("?")[0].replace(/^\//, "");
 
+  if (method === "delete" && /^admin\/questions\/bulk-upload-batches\/[^/]+$/.test(normalizedPath)) {
+    return { entity: "bulk upload batch", action: "deleted" };
+  }
+
   // These forms already own their feedback, including a question-to-problem fallback.
   if (
     (method === "post" && ["admin/assessments", "admin/questions"].includes(normalizedPath)) ||

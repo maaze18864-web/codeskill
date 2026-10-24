@@ -85,7 +85,7 @@ describe('practice submission source migration', () => {
       'UPDATE "public"."submissions" SET "problemSource" = \'problem\' WHERE "problemSource" IS NULL',
     );
     expect(statements).toContain(
-      'ALTER TABLE "public"."submissions" ADD CONSTRAINT "CHK_submissions_problem_source" CHECK ("problemSource" IN (\'problem\', \'metadata\', \'question\'))',
+      'ALTER TABLE "public"."submissions" ADD CONSTRAINT "CHK_submissions_problem_source" CHECK ("problemSource" IN (\'problem\', \'metadata\', \'question\', \'contest-question\'))',
     );
     expect(statements.filter((sql) => sql.includes('DROP CONSTRAINT'))).toEqual(
       [
@@ -105,7 +105,7 @@ describe('practice submission source migration', () => {
       checks: [
         {
           constraint_type: 'c',
-          definition: `CHECK ("problemSource" IN ('problem', 'metadata', 'question'))`,
+          definition: `CHECK ("problemSource" IN ('problem', 'metadata', 'question', 'contest-question'))`,
         },
       ],
     });

@@ -26,9 +26,29 @@ it("uses real identity, session, canonical problems, metadata and existing edito
 });
 it("finalizes the persisted session and opens its actual contest rankings", async () => {
   render(<Page />); const startButton = await screen.findByRole("button", { name: "Start live contest" }); await act(async () => { fireEvent.click(startButton); });
-  fireEvent.click(screen.getByRole("button", { name: "Finish Contest" })); fireEvent.click(screen.getByRole("button", { name: "Submit Now" }));
-  await waitFor(() => expect(post).toHaveBeenCalledWith("/contests/contest-id/submit", { sessionId: "server-session" }, expect.objectContaining({ signal: expect.any(AbortSignal) })));
+  fireEvent.click(screen.getByRole("button", { name: "Finish Contest" }));
+  fireEvent.click(screen.getByRole("button", { name: "Submit Now" }));
+  await waitFor(() => expect(post).toHaveBeenCalledWith("/contests/contest-id/submit", { sessionId: "server-session", answers: [] }, expect.objectContaining({ signal: expect.any(AbortSignal) })));
   expect(replace).toHaveBeenCalledWith("/contests/leaderboard?contest=real-contest");
+});
+it("renders MCQ contest questions and submits selected indices without exposing answers", async () => {
+  const mcqContext = {
+    ...context,
+    problems: [{ id: "mcq-id", slug: "question-mcq-id", title: "Choice question", question: "Which option is correct?", questionType: "MCQ", options: ["First", "Second"], marks: 2 }],
+  };
+  post.mockImplementation(async url => ({ data: String(url).endsWith("/start") ? mcqContext : { success: true } }));
+  render(<Page />);
+  const startButton = await screen.findByRole("button", { name: "Start live contest" });
+  await act(async () => { fireEvent.click(startButton); });
+  expect(await screen.findByText("Which option is correct?")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /First/ }));
+  expect(screen.getByRole("button", { name: /First/ })).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(screen.getByRole("button", { name: "Finish Contest" }));
+  fireEvent.click(screen.getByRole("button", { name: "Submit Now" }));
+  await waitFor(() => expect(post).toHaveBeenCalledWith("/contests/contest-id/submit", {
+    sessionId: "server-session",
+    answers: [{ questionId: "mcq-id", selectedAnswers: [0] }],
+  }, expect.objectContaining({ signal: expect.any(AbortSignal) })));
 });
 it("shows API failures and allows a manual retry instead of claiming success", async () => {
   render(<Page />); const startButton = await screen.findByRole("button", { name: "Start live contest" }); await act(async () => { fireEvent.click(startButton); });

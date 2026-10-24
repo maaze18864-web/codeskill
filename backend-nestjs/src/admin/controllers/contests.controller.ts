@@ -106,6 +106,12 @@ export class AdminContestsController {
     return this.adminService.revokeContestReattempt(id, targetId);
   }
 
+  @Get('eligible-questions')
+  @ApiOperation({ summary: 'List published Contest Only questions for contest creation' })
+  async getEligibleQuestions(@Query('format') format?: string) {
+    return this.adminService.getContestEligibleQuestions(format);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get a contest by ID' })
   async getContest(@Param('id') id: string) {

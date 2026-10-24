@@ -22,10 +22,10 @@ import {
   DropdownMenuGroup,
 } from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
-import { 
-  MoreVertical, 
-  Eye, 
-  CheckCircle2, 
+import {
+  MoreVertical,
+  Eye,
+  CheckCircle2,
   XCircle,
   Search,
   FilterX,
@@ -104,6 +104,9 @@ interface VTable3Props {
   deletingQuestions: boolean;
   deletingQuestionId?: string | null;
   onBulkEdit?: () => void;
+  batches?: any[];
+  selectedBatchId?: string;
+  onBatchChange?: (id: string) => void;
   showBulkEdit?: boolean;
   showFilterSubmit?: boolean;
 }
@@ -140,6 +143,9 @@ export function VTable3({
   deletingQuestions,
   deletingQuestionId,
   onBulkEdit,
+  batches = [],
+  selectedBatchId = '',
+  onBatchChange,
   showBulkEdit = true,
   showFilterSubmit = true,
 }: VTable3Props) {
@@ -167,8 +173,8 @@ export function VTable3({
     }
   }, { scope: containerRef, dependencies: [questions, loading] });
 
-  const hasFilters = Boolean(search || selectedTopic || selectedDifficulty || selectedType || selectedStatus);
   const visibleIds = (questions || []).map((q) => String(q?._id || q?.id || q?.mongoId || getQuestionRowKey(q) || "")).filter(Boolean);
+  const hasFilters = Boolean(search || selectedTopic || selectedDifficulty || selectedType || selectedStatus || selectedBatchId);
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedQuestionIds.includes(id));
 
   // Deduplicate and resolve deterministic row keys
@@ -323,13 +329,27 @@ export function VTable3({
             <option value="rejected">Rejected</option>
           </select>
 
+          <select
+            aria-label="Filter by upload batch"
+            value={selectedBatchId}
+            onChange={(e) => onBatchChange?.(e.target.value)}
+            className="px-3 py-2 bg-background border border-border rounded-lg text-sm text-foreground focus:outline-none focus:border-amber-500"
+          >
+            <option value="">All Upload Batches</option>
+            {batches.map((batch) => (
+              <option key={batch.id} value={batch.id}>
+                {batch.questionType} | {new Date(batch.createdAt).toLocaleString()} | {batch.successCount} Questions | {batch.batchCode}
+              </option>
+            ))}
+          </select>
+
           {showFilterSubmit && <button
             type="submit"
             className="px-4 py-2 bg-primary text-primary-foreground hover:bg-primary/90 rounded-lg text-sm font-medium transition-colors"
           >
             Filter
           </button>}
-          
+
           {hasFilters && (
             <button
               type="button"
@@ -394,7 +414,7 @@ export function VTable3({
                       {hasFilters ? "No matching questions" : "No questions found"}
                     </h3>
                     <p className="text-sm text-muted-foreground mb-4 max-w-sm">
-                      {hasFilters 
+                      {hasFilters
                         ? "Try adjusting your filters or clearing them to see more results."
                         : "Get started by creating your first assessment question."}
                     </p>
@@ -459,39 +479,39 @@ export function VTable3({
                         </div>
                       </div>
                     </TableCell>
-                    
+
                     <TableCell>
                       <Badge variant="outline" className="text-[11px] font-medium bg-background text-muted-foreground border-border rounded-md">
                         {getQuestionTypeLabel(q.questionType)}
                       </Badge>
                     </TableCell>
-                    
+
                     <TableCell>
                       <div className="flex flex-col">
                         <span className="text-xs font-medium text-foreground">{getTopicCategories(q).join(", ") || "General"}</span>
                         {q.subtopic && <span className="text-[10px] text-muted-foreground truncate max-w-[120px]">{q.subtopic}</span>}
                       </div>
                     </TableCell>
-                    
+
                     <TableCell>
                       <Badge variant="outline" className={`text-[11px] font-medium capitalize rounded-md ${getDifficultyColor(q.difficulty)}`}>
                         {q.difficulty || "medium"}
                       </Badge>
                     </TableCell>
-                    
+
                     <TableCell>
                       <div className="flex items-center gap-1 text-xs font-mono">
                         <span className="text-emerald-500 font-semibold">+{q.marks || 1}</span>
                         {q.negativeMarks > 0 && <span className="text-rose-500">-{q.negativeMarks}</span>}
                       </div>
                     </TableCell>
-                    
+
                     <TableCell>
                       <Badge variant="outline" className={`text-[11px] font-medium capitalize rounded-md ${getStatusColor(q.status)}`}>
                         {statusStr}
                       </Badge>
                     </TableCell>
-                    
+
                     <TableCell>
                       <div className="flex flex-col text-xs font-mono" title={`Created: ${q.createdAt ? new Date(q.createdAt).toLocaleString() : "-"}\nUpdated: ${q.updatedAt ? new Date(q.updatedAt).toLocaleString() : "-"}`}>
                         <span className="text-foreground font-medium whitespace-nowrap">
@@ -502,7 +522,7 @@ export function VTable3({
                         </span>
                       </div>
                     </TableCell>
-                    
+
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
                       <button

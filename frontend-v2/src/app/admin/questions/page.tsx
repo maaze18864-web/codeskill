@@ -43,8 +43,9 @@ function QuestionsAdminContent() {
   const initialType = searchParams?.get("type") || searchParams?.get("questionType") || "";
   const initialSearch = searchParams?.get("search") || "";
   const initialStatus = searchParams?.get("status") || "";
+  const initialBatchId = searchParams?.get("batchId") || "";
 
-  const [activeTab, setActiveTab] = useState<"questions" | "banks" | "coding">("questions");
+  const [activeTab, setActiveTab] = useState<"questions" | "banks" | "coding" | "history">("questions");
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Questions State
@@ -59,6 +60,13 @@ function QuestionsAdminContent() {
   const [selectedType, setSelectedType] = useState(initialType);
   const [selectedStatus, setSelectedStatus] = useState(initialStatus);
   const [topicsList, setTopicsList] = useState<any[]>([]);
+  const [batches, setBatches] = useState<any[]>([]);
+  const [selectedBatchId, setSelectedBatchId] = useState(initialBatchId);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyTotalPages, setHistoryTotalPages] = useState(1);
+  const [historyBatches, setHistoryBatches] = useState<any[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [deletingBatchId, setDeletingBatchId] = useState<string | null>(null);
   const [selectedQuestionIds, setSelectedQuestionIds] = useState<string[]>([]);
   const [deletingQuestions, setDeletingQuestions] = useState(false);
   const [deletingQuestionId, setDeletingQuestionId] = useState<string | null>(null);
@@ -83,12 +91,14 @@ function QuestionsAdminContent() {
     const typeFromUrl = searchParams?.get("type") || searchParams?.get("questionType") || "";
     const searchFromUrl = searchParams?.get("search") || "";
     const statusFromUrl = searchParams?.get("status") || "";
+    const batchFromUrl = searchParams?.get("batchId") || "";
 
     setSelectedTopic(topicFromUrl);
     setSelectedDifficulty(diffFromUrl);
     setSelectedType(typeFromUrl);
     setSearch(searchFromUrl);
     setSelectedStatus(statusFromUrl);
+    setSelectedBatchId(batchFromUrl);
     setSelectedQuestionIds([]);
     setPage(1);
   }, [searchParams]);
@@ -189,6 +199,7 @@ function QuestionsAdminContent() {
 
   useEffect(() => {
     fetchTopics();
+    fetchBatches();
   }, []);
 
   useEffect(() => {
@@ -198,8 +209,59 @@ function QuestionsAdminContent() {
       fetchBanks();
     } else if (activeTab === "coding") {
       fetchCodingProblems();
+    } else if (activeTab === "history") {
+      fetchBatchHistory();
     }
-  }, [activeTab, page, selectedTopic, selectedDifficulty, selectedType, selectedStatus]);
+  }, [activeTab, page, selectedTopic, selectedDifficulty, selectedType, selectedStatus, selectedBatchId, historyPage]);
+
+  const fetchBatches = async () => {
+    try {
+      const res = await adminQuestionsAPI.getBulkUploadBatches({ page: 1, limit: 100 });
+      const list = Array.isArray(res.data?.batches) ? res.data.batches : [];
+      setBatches(list);
+    } catch (err) {
+      console.error("Failed to fetch bulk upload batches", err);
+      setBatches([]);
+    }
+  };
+
+  const fetchBatchHistory = async () => {
+    setHistoryLoading(true);
+    try {
+      const res = await adminQuestionsAPI.getBulkUploadBatches({ page: historyPage, limit: 15 });
+      setHistoryBatches(Array.isArray(res.data?.batches) ? res.data.batches : []);
+      setHistoryTotalPages(res.data?.pagination?.totalPages ?? 1);
+    } catch (err) {
+      console.error("Failed to fetch bulk upload history", err);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const handleDeleteBatch = async (batch: any, mode: "history" | "with-questions") => {
+    if (deletingBatchId || deleteInFlight.current) return;
+    const action = mode === "history"
+      ? "Delete History Only (imported questions will remain available)"
+      : "Delete Batch and Imported Questions (deletion is blocked if any question is referenced)";
+    if (!await confirmDelete({ title: mode === "history" ? "Delete import history?" : "Delete batch and questions?", description: `${action} for batch ${batch.batchCode} (${batch.originalFilename})?` })) return;
+
+    deleteInFlight.current = true;
+    setDeletingBatchId(batch.id);
+    try {
+      await adminQuestionsAPI.deleteBulkUploadBatch(batch.id, mode);
+      if (historyBatches.length === 1 && historyPage > 1) {
+        setHistoryPage((current) => Math.max(1, current - 1));
+      } else {
+        await Promise.all([fetchBatchHistory(), fetchBatches()]);
+      }
+    } catch (error) {
+      // The API mutation interceptor displays the single operation failure toast.
+      console.error("Failed to delete bulk upload batch", error);
+    } finally {
+      deleteInFlight.current = false;
+      setDeletingBatchId(null);
+    }
+  };
 
   const fetchTopics = async () => {
     try {
@@ -229,6 +291,7 @@ function QuestionsAdminContent() {
         difficulty: selectedDifficulty || undefined,
         questionType: selectedType || undefined,
         status: selectedStatus || undefined,
+        batchId: selectedBatchId || undefined,
       });
       const rawList = Array.isArray(res.data?.questions)
         ? res.data.questions
@@ -540,6 +603,14 @@ function QuestionsAdminContent() {
         </button>
 
         <button
+          onClick={() => { setSelectedQuestionIds([]); setActiveTab("history"); }}
+          className={`tab-button pb-3 text-sm font-semibold border-b-2 transition-all flex items-center gap-2 ${activeTab === "history" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+        >
+          <Clock className="w-4 h-4" />
+          Bulk Upload History
+        </button>
+
+        <button
           onClick={() => { setSelectedQuestionIds([]); setActiveTab("banks"); }}
           className={`tab-button pb-3 text-sm font-semibold border-b-2 transition-all flex items-center gap-2 ${
             activeTab === "banks"
@@ -634,9 +705,24 @@ function QuestionsAdminContent() {
           deletingQuestions={deletingQuestions}
           deletingQuestionId={deletingQuestionId}
           onBulkEdit={() => setBulkEditOpen(true)}
+          batches={batches}
+          selectedBatchId={selectedBatchId}
+          onBatchChange={(id) => { setSelectedBatchId(id); setPage(1); updateUrlParam("batchId", id); }}
           showBulkEdit={false}
           showFilterSubmit={false}
         />
+      )}
+
+      {activeTab === "history" && (
+        <div className="rounded-xl border border-border bg-card overflow-x-auto">
+          {historyLoading ? <div className="p-10 text-center text-muted-foreground">Loading upload history...</div> : (
+            <table className="w-full text-sm">
+              <thead><tr className="border-b border-border text-left text-muted-foreground"><th className="p-3">Batch</th><th className="p-3">Type</th><th className="p-3">Filename</th><th className="p-3">Uploaded</th><th className="p-3">Rows</th><th className="p-3">Success</th><th className="p-3">Failed</th><th className="p-3">Status</th><th className="p-3">Uploader</th><th className="p-3">Actions</th></tr></thead>
+              <tbody>{historyBatches.map((batch) => <tr key={batch.id} className="border-b border-border/60"><td className="p-3 font-mono">{batch.batchCode}</td><td className="p-3">{batch.questionType}</td><td className="p-3">{batch.originalFilename}</td><td className="p-3">{new Date(batch.createdAt).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}</td><td className="p-3">{batch.totalRows}</td><td className="p-3">{batch.successCount}</td><td className="p-3">{batch.failureCount}</td><td className="p-3">{batch.status}</td><td className="p-3">{batch.uploader?.name || batch.uploader?.email || "—"}</td><td className="p-3"><div className="flex min-w-48 flex-col items-start gap-1"><button type="button" disabled={Boolean(deletingBatchId)} onClick={() => handleDeleteBatch(batch, "history")} className="text-xs text-amber-600 hover:underline disabled:opacity-50">{deletingBatchId === batch.id ? "Deleting…" : "Delete History Only"}</button><button type="button" disabled={Boolean(deletingBatchId)} onClick={() => handleDeleteBatch(batch, "with-questions")} className="text-xs text-destructive hover:underline disabled:opacity-50">Delete Batch + Questions</button></div></td></tr>)}</tbody>
+            </table>
+          )}
+          <div className="flex items-center justify-between p-3"><span>Page {historyPage} of {historyTotalPages}</span><div className="flex gap-2"><button disabled={historyPage <= 1} onClick={() => setHistoryPage((p) => Math.max(1, p - 1))} className="rounded border border-border px-3 py-1 disabled:opacity-40">Previous</button><button disabled={historyPage >= historyTotalPages} onClick={() => setHistoryPage((p) => Math.min(historyTotalPages, p + 1))} className="rounded border border-border px-3 py-1 disabled:opacity-40">Next</button></div></div>
+        </div>
       )}
 
       {/* Tab 2: Question Banks (Collections) */}

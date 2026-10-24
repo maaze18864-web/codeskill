@@ -52,6 +52,8 @@ describe('Practice submission identity', () => {
   const problems = {
     getExecutionProblem: jest.fn().mockResolvedValue(problem),
   };
+  const contestRepo = { findOne: jest.fn() };
+  const contestAttemptRepo = { findOne: jest.fn() };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -68,6 +70,8 @@ describe('Practice submission identity', () => {
         reserve: jest.fn().mockResolvedValue(submissionId),
         release: jest.fn().mockResolvedValue(undefined),
       } as never,
+      contestRepo as never,
+      contestAttemptRepo as never,
     );
   });
 
@@ -116,6 +120,30 @@ describe('Practice submission identity', () => {
       }),
       expect.any(Object),
     );
+  });
+
+  it('preserves public contest problem resolution and authorizes contest-only question fallback', async () => {
+    const eligibleContest = {
+      id: 'contest-id', isPublished: true, format: 'coding', participants: [userId], problems: [problemId],
+    };
+    contestRepo.findOne.mockResolvedValue(eligibleContest);
+    contestAttemptRepo.findOne.mockResolvedValue({ status: 'InProgress' });
+    const result = await service.createSubmission(userId, { ...payload, contestId: 'contest-id' });
+
+    expect(problems.getExecutionProblem).toHaveBeenCalledWith(problemId);
+    expect(result.problemSource).toBe('metadata');
+
+    problems.getExecutionProblem.mockRejectedValueOnce(new NotFoundException('Problem not found'));
+    problems.getExecutionProblem.mockResolvedValueOnce({ ...problem, source: 'question' });
+    const contestOnlyResult = await service.createSubmission(userId, { ...payload, contestId: 'contest-id' });
+    expect(problems.getExecutionProblem).toHaveBeenNthCalledWith(3, problemId, 'contest-question');
+    expect(contestOnlyResult.problemSource).toBe('contest-question');
+    expect(queue.add).toHaveBeenLastCalledWith('evaluate-code', expect.objectContaining({ problemSource: 'contest-question' }), expect.anything());
+
+    contestRepo.findOne.mockResolvedValueOnce({ ...eligibleContest, problems: ['another-problem'] });
+    await expect(service.createSubmission(userId, { ...payload, contestId: 'contest-id' })).rejects.toThrow('not selected for the contest');
+    contestRepo.findOne.mockResolvedValueOnce({ ...eligibleContest, participants: [] });
+    await expect(service.createSubmission(userId, { ...payload, contestId: 'contest-id' })).rejects.toThrow('Register for this contest first');
   });
 
   it('preserves legacy problem submissions and existing public problemId payloads', async () => {

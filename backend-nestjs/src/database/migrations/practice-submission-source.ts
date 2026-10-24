@@ -89,18 +89,26 @@ export async function applyPracticeSubmissionSourceMigration(
   ) {
     throw new Error('The submission source check name is already in use.');
   }
-  if (existing && !existing.definition?.includes("'question'")) {
+  if (
+    existing &&
+    (!existing.definition?.includes("'question'") ||
+      !existing.definition?.includes("'contest-question'"))
+  ) {
     await queryRunner.query(
       'ALTER TABLE ' + qualifiedTable + ' DROP CONSTRAINT ' + quotedCheck,
     );
   }
-  if (!existing || !existing.definition?.includes("'question'")) {
+  if (
+    !existing ||
+    !existing.definition?.includes("'question'") ||
+    !existing.definition?.includes("'contest-question'")
+  ) {
     await queryRunner.query(
       'ALTER TABLE ' +
         qualifiedTable +
         ' ADD CONSTRAINT ' +
         quotedCheck +
-        " CHECK (\"problemSource\" IN ('problem', 'metadata', 'question'))",
+        " CHECK (\"problemSource\" IN ('problem', 'metadata', 'question', 'contest-question'))",
     );
   }
   await queryRunner.query(

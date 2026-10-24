@@ -44,6 +44,16 @@ export class ContestsController {
     return this.contestsService.getStartContext(id, userId);
   }
 
+  @Get(':id/problems/:slug')
+  @UseGuards(JwtAuthGuard)
+  async contestProblem(
+    @Param('id') id: string,
+    @Param('slug') slug: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.contestsService.getContestProblem(id, slug, userId);
+  }
+
   @Post(':id/start')
   @UseGuards(JwtAuthGuard)
   async startAttempt(
@@ -59,8 +69,9 @@ export class ContestsController {
     @Param('id') id: string,
     @CurrentUser('id') userId: string,
     @Body('sessionId') sessionId: string,
+    @Body('answers') answers?: Array<{ questionId: string; selectedAnswer?: number; selectedAnswers?: number[] }>,
   ) {
-    return this.contestsService.submitAttempt(id, userId, sessionId);
+    return this.contestsService.submitAttempt(id, userId, sessionId, answers);
   }
 
   @Post(':id/violations')

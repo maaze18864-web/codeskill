@@ -73,6 +73,22 @@ export class QuestionsController {
     return this.questionsService.parseAndValidateQuestionsImport(file.buffer, sheetName?.trim(), true);
   }
 
+  @Get('bulk-upload-batches')
+  @ApiOperation({ summary: 'Get paginated bulk question upload history' })
+  async getBulkUploadBatches(@Query('page') page?: string, @Query('limit') limit?: string) {
+    return this.questionsService.getBulkUploadBatches(Number(page) || 1, Number(limit) || 20);
+  }
+
+  @Delete('bulk-upload-batches/:id')
+  @UseGuards(AdminGuard)
+  @ApiOperation({ summary: 'Delete bulk upload history, optionally with unreferenced imported questions (Admin only)' })
+  async deleteBulkUploadBatch(
+    @Param('id') id: string,
+    @Query('mode') mode: 'history' | 'with-questions',
+  ) {
+    return this.questionsService.deleteBulkUploadBatch(id, mode);
+  }
+
   @Post('import/auto')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -104,6 +120,7 @@ export class QuestionsController {
       userAgent,
       mergeStrategy,
       sheetName?.trim(),
+      file.originalname,
     );
   }
 
@@ -114,6 +131,8 @@ export class QuestionsController {
   })
   async confirmImport(
     @Body('validRows') validRows: any[],
+    @Body('totalRows') totalRows: number,
+    @Body('originalFilename') originalFilename: string,
     @Body('mergeStrategy') mergeStrategy: 'skip' | 'update' | 'merge' = 'skip',
     @CurrentUser() adminUser: any,
     @Req() req: any,
@@ -126,6 +145,7 @@ export class QuestionsController {
       ip,
       userAgent,
       mergeStrategy,
+      { fileName: originalFilename || 'upload', totalRows: Number(totalRows) || validRows?.length || 0 },
     );
   }
 

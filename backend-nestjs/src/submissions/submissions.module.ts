@@ -10,11 +10,13 @@ import { User } from '../database/entities/user.entity';
 import { GatewayModule } from '../gateway/gateway.module';
 import { RedisModule } from '../redis/redis.module';
 import { ProblemsModule } from '../problems/problems.module';
+import { Contest } from '../database/entities/contest.entity';
+import { ContestAttempt } from '../database/entities/contest-attempt.entity';
 
 @Module({
   imports: [
     SubmissionShardingModule,
-    TypeOrmModule.forFeature([Submission, User]),
+    TypeOrmModule.forFeature([Submission, User, Contest, ContestAttempt]),
     BullModule.registerQueue({
       name: 'submissions',
     }),

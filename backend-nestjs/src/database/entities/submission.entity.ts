@@ -12,12 +12,12 @@ import {
 import { User } from './user.entity';
 import { Problem } from './problem.entity';
 
-export type ProblemSource = 'problem' | 'metadata' | 'question';
+export type ProblemSource = 'problem' | 'metadata' | 'question' | 'contest-question';
 
 @Entity('submissions')
 @Check(
   'CHK_submissions_problem_source',
-  `"problemSource" IN ('problem', 'metadata', 'question')`,
+  `"problemSource" IN ('problem', 'metadata', 'question', 'contest-question')`,
 )
 @Index(['userId', 'problemId', 'status'])
 @Index(['createdAt'])

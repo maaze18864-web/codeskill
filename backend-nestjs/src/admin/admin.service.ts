@@ -447,6 +447,29 @@ export class AdminService {
     return { ...contest, _id: contest.id };
   }
 
+  async getContestEligibleQuestions(format?: string) {
+    const selectedFormat = String(format || '').toLowerCase();
+    if (selectedFormat && !contestFormats.includes(selectedFormat as ContestFormat)) {
+      throw new BadRequestException('Invalid contest format');
+    }
+    const questions = await this.questionModel.find({ order: { createdAt: 'DESC' } });
+    return {
+      questions: questions
+        .filter((question) => {
+          const type = questionFormat(question.questionType);
+          return isContestEligibleQuestion(question) && type &&
+            (!selectedFormat || selectedFormat === 'mixed' || type === selectedFormat);
+        })
+        .map((question) => ({
+          _id: question.id,
+          title: question.title || question.question,
+          slug: question.slug || `question-${question.id}`,
+          difficulty: question.difficulty,
+          type: questionFormat(question.questionType),
+        })),
+    };
+  }
+
   async deleteContest(id: string) {
     const contest = await this.contestModel.findOne({
       where: this.contestLookup(id),

@@ -57,4 +57,9 @@ export class QueryQuestionsDto {
   @IsOptional()
   @IsString()
   aiGenerated?: string;
+
+  @ApiPropertyOptional({ description: 'Filter questions by bulk-upload batch UUID' })
+  @IsOptional()
+  @IsString()
+  batchId?: string;
 }

@@ -141,6 +141,30 @@ describe('Question publication persistence', () => {
     expect(question).not.toHaveProperty('contestOnly');
   });
 
+  it.each(['MCQ', 'DSA'])(
+    'persists published Contest Only eligibility for %s questions',
+    async (questionType) => {
+      const question = await service.create(
+        {
+          ...baseQuestion,
+          questionType,
+          ...(questionType === 'MCQ'
+            ? { options: ['First option', 'Second option'], correctAnswer: 0 }
+            : {}),
+          status: 'active',
+          visibility: 'Published',
+          contestOnly: true,
+        },
+        admin,
+      );
+      expect(question.metadata).toEqual({
+        categories: ['Arrays', 'Trees'],
+        visibility: 'Published',
+        contestOnly: true,
+      });
+    },
+  );
+
   it('unpublishes an existing question without losing categories or unrelated metadata', async () => {
     await service.update(
       'q1',

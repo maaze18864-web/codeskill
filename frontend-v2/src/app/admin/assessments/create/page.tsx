@@ -46,6 +46,8 @@ type AssessmentApiSection = {
   questions?: AssessmentApiQuestionConfig[];
 };
 type AssessmentApiData = {
+  labExperimentId?: string;
+  labMaxScore?: number;
   sections?: AssessmentApiSection[];
   questions?: Array<AssessmentApiQuestion | string>;
   title?: string;
@@ -108,10 +110,15 @@ function AssessmentBuilder() {
   const [previewNow, setPreviewNow] = useState(() => Date.now());
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formReady, setFormReady] = useState(false);
+  const [labContext,setLabContext]=useState<{experimentId:string;labId:string}|null>(null);
+  const [labMaxScore,setLabMaxScore]=useState(20);
 
   useEffect(() => {
     let active = true;
     const assessmentId = new URLSearchParams(window.location.search).get("id");
+    const query=new URLSearchParams(window.location.search);
+    const experimentId=query.get('experimentId');
+    if(experimentId) setLabContext({experimentId,labId:query.get('labId')||''});
     const hydrateForm = async () => {
       try {
         if (!assessmentId) {
@@ -124,6 +131,7 @@ function AssessmentBuilder() {
         const response = await adminAssessmentsAPI.getById(assessmentId);
         const assessment = response.data?.assessment as AssessmentApiData | undefined;
         if (!assessment) throw new Error("Assessment details were not returned by the server.");
+        if(assessment.labExperimentId) {setLabContext({experimentId:assessment.labExperimentId,labId:query.get('labId')||''});setLabMaxScore(assessment.labMaxScore??20);}
         const sections = (assessment.sections || []).map((section, sectionIndex) => ({
           id: `section-${sectionIndex}`,
           title: section.title || `Section ${String.fromCharCode(65 + sectionIndex)}`,
@@ -349,6 +357,7 @@ function AssessmentBuilder() {
         code: store.code,
         description: store.description,
         durationMinutes: store.durationMinutes,
+        ...(labContext?{labExperimentId:labContext.experimentId,labMaxScore}:{}),
         passingMarks: store.passingMarks !== '' ? Number(store.passingMarks) : undefined,
         category: store.category,
         allowedAttempts: store.allowedAttempts,
@@ -382,7 +391,7 @@ function AssessmentBuilder() {
       }
 
       addToast("success", "Success", `Assessment ${status === 'published' ? 'published' : 'saved as draft'}`);
-      setTimeout(() => router.push("/admin/assessments"), 1000);
+      setTimeout(() => router.push(labContext?`/admin/labs/catalog?labId=${labContext.labId}`:"/admin/assessments"), 1000);
     } catch (err: unknown) {
       const message = err && typeof err === "object" && "response" in err
         ? (err as { response?: { data?: { message?: string } } }).response?.data?.message
@@ -430,6 +439,7 @@ function AssessmentBuilder() {
       </div>
 
       <div className="max-w-5xl mx-auto px-6 py-8 space-y-8">
+        {labContext && <section className="flex items-center justify-between gap-4 rounded-xl border border-primary/25 bg-primary/5 p-4"><div><h2 className="text-sm font-semibold">Experiment assessment</h2><p className="mt-1 text-xs text-muted-foreground">Assigned through lab section enrollment. Set each question’s marks below; the lab contribution scales the final exam score.</p></div><label className="shrink-0 text-xs font-semibold">Lab contribution<input type="number" min={0} max={10000} value={labMaxScore} onChange={event=>setLabMaxScore(Number(event.target.value))} className="mt-2 block w-28 rounded-lg border border-border bg-background px-3 py-2"/></label></section>}
 
         {/* Basic Info */}
         <section className="bg-card border border-border rounded-2xl p-6 space-y-5 shadow-sm">

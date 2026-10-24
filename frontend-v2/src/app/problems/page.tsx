@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useState, useEffect } from "react";
 import { problemsAPI } from "@/config/api";
 import { Spinner } from "@/components/ui/spinner";
-import PracticePet from "@/components/pet/PracticePet";
+// import PracticePet from "@/components/pet/PracticePet"; // TODO: re-enable pet tutor
 import { parsePublicProblemList, type PublicProblemList } from "@/lib/public-problems";
 
 import { useProblemProgress } from "@/hooks/useProblemProgress";
@@ -194,7 +194,7 @@ export default function ProblemsPage() {
           </footer>
         </section>
       </div>
-      <PracticePet />
+      {/* Practice pet is disabled while the tutor is being refreshed. */}
     </main>
   );
 }

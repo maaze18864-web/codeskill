@@ -11,7 +11,7 @@ jest.mock("next/navigation", () => ({
 }));
 jest.mock("@gsap/react", () => ({ useGSAP: () => {} }));
 jest.mock("@/config/api", () => ({
-  adminQuestionsAPI: { getAll: jest.fn(), getTopics: jest.fn(), delete: jest.fn() },
+  adminQuestionsAPI: { getAll: jest.fn(), getTopics: jest.fn(), getBulkUploadBatches: jest.fn(), delete: jest.fn() },
   adminProblemsAPI: { getAll: jest.fn(), delete: jest.fn() },
   adminQuestionBanksAPI: { getAll: jest.fn() },
 }));
@@ -25,6 +25,7 @@ beforeEach(() => {
   jest.spyOn(window, "confirm").mockReturnValue(true);
   jest.mocked(adminQuestionsAPI.getAll).mockResolvedValue(questionList() as never);
   jest.mocked(adminQuestionsAPI.getTopics).mockResolvedValue({ data: { topics: [] } } as never);
+  jest.mocked(adminQuestionsAPI.getBulkUploadBatches).mockResolvedValue({ data: { batches: [] } } as never);
   jest.mocked(adminQuestionsAPI.delete).mockResolvedValue({ data: { success: true } } as never);
   jest.mocked(adminProblemsAPI.getAll).mockResolvedValue({ data: { problems: [practice] } } as never);
   jest.mocked(adminProblemsAPI.delete).mockResolvedValue({ data: { success: true } } as never);

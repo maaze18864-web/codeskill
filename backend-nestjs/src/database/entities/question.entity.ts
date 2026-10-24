@@ -9,12 +9,14 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { User } from './user.entity';
+import { QuestionBulkUploadBatch } from './question-bulk-upload-batch.entity';
 
 @Entity('questions')
 @Index(['topic', 'difficulty', 'status'])
 @Index(['topic', 'subtopic'])
 @Index(['status', 'createdAt'])
 @Index(['aiGenerated', 'status'])
+@Index(['bulk_upload_batch_id'])
 export class Question {
   @PrimaryGeneratedColumn('uuid')
   id: string;
@@ -98,6 +100,13 @@ export class Question {
 
   @Column({ type: 'uuid', nullable: true })
   approved_by_id?: string;
+
+  @ManyToOne(() => QuestionBulkUploadBatch, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'bulk_upload_batch_id' })
+  bulkUploadBatch?: QuestionBulkUploadBatch;
+
+  @Column({ type: 'uuid', nullable: true })
+  bulk_upload_batch_id?: string;
 
   @Column({ type: 'timestamp', nullable: true })
   approvedAt?: Date;

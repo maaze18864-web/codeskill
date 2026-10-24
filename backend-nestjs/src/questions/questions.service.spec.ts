@@ -11,6 +11,7 @@ describe('QuestionsService - True/False Questions Handling', () => {
   let mockQuestionRepo: any;
   let mockQuestionBankRepo: any;
   let mockAuditLogRepo: any;
+  let importQueryBuilder: any;
 
   const mockAdminUser = { id: 'admin-uuid-1', email: 'admin@codeskill.com' };
 
@@ -24,6 +25,15 @@ describe('QuestionsService - True/False Questions Handling', () => {
       createQueryBuilder: jest.fn(),
       query: jest.fn(),
     };
+
+    importQueryBuilder = {
+      select: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue([]),
+      getRawMany: jest.fn().mockResolvedValue([]),
+    };
+    mockQuestionRepo.createQueryBuilder.mockReturnValue(importQueryBuilder);
 
     mockQuestionBankRepo = {
       findOne: jest.fn(),
@@ -351,7 +361,9 @@ describe('QuestionsService - True/False Questions Handling', () => {
         slug: 'java-inheritance-basics',
         options: [],
       };
-      mockQuestionRepo.find.mockResolvedValueOnce([collision]).mockResolvedValueOnce([collision]);
+      importQueryBuilder.getRawMany.mockResolvedValueOnce([
+        { slug: collision.slug },
+      ]);
       const sheet = XLSX.utils.json_to_sheet([{
         title: 'Java Inheritance Basics',
         question: 'What is inheritance?',

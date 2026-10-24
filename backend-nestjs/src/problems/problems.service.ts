@@ -354,7 +354,7 @@ export class ProblemsService {
     };
   }
 
-  async getProblemBySlug(slug: string) {
+  async getProblemBySlug(slug: string, allowContestOnly = false) {
     // Read current publication status before returning any body or test data.
     const metadata = await this.metadataBySlug(slug);
     if (metadata) {
@@ -506,9 +506,13 @@ export class ProblemsService {
     };
   }
 
+  async getContestProblemBySlug(slug: string) {
+    return this.getProblemBySlug(slug, true);
+  }
+
   async getExecutionProblem(
     id: string,
-    source?: 'problem' | 'metadata' | 'question',
+    source?: 'problem' | 'metadata' | 'question' | 'contest-question',
   ): Promise<ExecutionProblem> {
     if (
       !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
@@ -547,9 +551,10 @@ export class ProblemsService {
       if (source === 'metadata')
         throw new NotFoundException('Problem not found');
     }
-    if (!source || source === 'question') {
+    if (!source || source === 'question' || source === 'contest-question') {
       const question = await this.questionRepository.findOne({ where: { id } });
       if (question) {
+        const isContestQuestion = source === 'contest-question';
         if (
           !bankExecutionEligible(question) ||
           (await this.hasMetadataCounterpart(question))
@@ -564,7 +569,7 @@ export class ProblemsService {
           config: this.bankConfig(question),
         };
       }
-      if (source === 'question')
+      if (source === 'question' || source === 'contest-question')
         throw new NotFoundException('Problem not found');
     }
     if (source && source !== 'problem')

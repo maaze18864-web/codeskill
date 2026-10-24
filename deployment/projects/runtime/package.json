@@ -1,0 +1,18 @@
+{
+  "name": "codeskill-project-runtime",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@sveltejs/vite-plugin-svelte": "5.1.1",
+    "@vitejs/plugin-vue": "5.2.4",
+    "express": "5.1.0",
+    "fastify": "5.12.7",
+    "next": "16.4.2",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
+    "svelte": "5.57.2",
+    "vite": "6.4.5",
+    "vue": "3.5.44"
+  }
+}

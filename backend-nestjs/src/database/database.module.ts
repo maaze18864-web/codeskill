@@ -37,6 +37,7 @@ import { BugReport } from './entities/bug-report.entity';
 import { BugImage } from './entities/bug-image.entity';
 import { BugComment } from './entities/bug-comment.entity';
 import { BugActivity } from './entities/bug-activity.entity';
+import { QuestionBulkUploadBatch } from './entities/question-bulk-upload-batch.entity';
 import {
   LearningPath,
   LearningPathCourse,
@@ -55,8 +56,19 @@ import {
   Certificate,
   CertificateEvent,
 } from '../learning/entities';
+import { LabSection } from './entities/lab-section.entity';
+import { LabSubgroup } from './entities/lab-subgroup.entity';
+import { LabSectionEnrollment } from './entities/lab-section-enrollment.entity';
+import { Lab } from './entities/lab.entity';
+import { LabSectionAssignment } from './entities/lab-section-assignment.entity';
+import { LabTeacherAssignment } from './entities/lab-teacher-assignment.entity';
+import { LabExperiment } from './entities/lab-experiment.entity';
+import { LabExperimentProblem } from './entities/lab-experiment-problem.entity';
+import { LabProblemProgress } from './entities/lab-problem-progress.entity';
+import { ProjectWorkspace } from './entities/project-workspace.entity';
 
 const entities = [
+  ProjectWorkspace,
   User,
   RefreshToken,
   BugReport,
@@ -69,6 +81,7 @@ const entities = [
   ProblemConfig,
   ProblemTestCase,
   Question,
+  QuestionBulkUploadBatch,
   QuestionBank,
   Assessment,
   AssessmentAttempt,
@@ -106,6 +119,15 @@ const entities = [
   CertificateTemplate,
   Certificate,
   CertificateEvent,
+  LabSection,
+  LabSubgroup,
+  LabSectionEnrollment,
+  Lab,
+  LabSectionAssignment,
+  LabTeacherAssignment,
+  LabExperiment,
+  LabExperimentProblem,
+  LabProblemProgress,
 ];
 
 @Module({
@@ -182,4 +204,4 @@ const entities = [
   providers: [DatabaseAutoMigrationService],
   exports: [TypeOrmModule, DatabaseAutoMigrationService],
 })
-export class DatabaseModule {}
+export class DatabaseModule { }

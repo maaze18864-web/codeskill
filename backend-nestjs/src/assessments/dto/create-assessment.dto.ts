@@ -10,6 +10,8 @@ import {
   Min,
   ValidateNested,
   Matches,
+  IsUUID,
+  Max,
 } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 import { normalizeSectionIdentifier } from '../../common/constants/sections.constant';
@@ -20,6 +22,8 @@ export class AssessmentQuestionConfigDto {
   questionId: string;
 
   @IsNumber()
+  @Min(0)
+  @Max(10000)
   @Type(() => Number)
   marks: number;
 
@@ -130,6 +134,14 @@ export class CreateAssessmentProctoringDto {
 }
 
 export class CreateAssessmentDto {
+  @IsOptional()
+  @IsUUID()
+  labExperimentId?: string;
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(10000)
+  labMaxScore?: number;
   @IsString()
   @IsNotEmpty()
   title: string;
@@ -207,7 +219,8 @@ export class CreateAssessmentDto {
   })
   @Matches(/^[A-Za-z0-9_\-]{1,16}$/, {
     each: true,
-    message: 'Each targetSection must be a valid section identifier (e.g. A1, B4)',
+    message:
+      'Each targetSection must be a valid section identifier (e.g. A1, B4)',
   })
   @IsString({ each: true })
   @IsOptional()

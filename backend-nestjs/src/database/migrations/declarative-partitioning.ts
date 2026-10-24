@@ -162,7 +162,7 @@ export async function applyDeclarativePartitioningMigration(
       "createdAt" timestamp NOT NULL DEFAULT now(),
       "updatedAt" timestamp NOT NULL DEFAULT now(),
       CONSTRAINT "PK_submissions" PRIMARY KEY ("id", "createdAt"),
-      CONSTRAINT "CHK_submissions_problem_source" CHECK ("problemSource" IN ('problem', 'metadata', 'question'))
+      CONSTRAINT "CHK_submissions_problem_source" CHECK ("problemSource" IN ('problem', 'metadata', 'question', 'contest-question'))
     ) PARTITION BY RANGE ("createdAt")`,
       generateDynamicPartitionsSql('submissions'),
       `CREATE INDEX IF NOT EXISTS "IDX_submissions_id" ON "submissions" ("id");

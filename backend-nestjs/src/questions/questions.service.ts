@@ -2,12 +2,15 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
+  ConflictException,
+  Optional,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, Brackets, In, IsNull } from 'typeorm';
 import { Question as QuestionEntity } from '../database/entities/question.entity';
 import { QuestionBank as QuestionBankEntity } from '../database/entities/question-bank.entity';
 import { AuditLog as AuditLogEntity } from '../database/entities/audit-log.entity';
+import { QuestionBulkUploadBatch } from '../database/entities/question-bulk-upload-batch.entity';
 import { CreateQuestionDto } from './dto/create-question.dto';
 import { UpdateQuestionDto } from './dto/update-question.dto';
 import { QueryQuestionsDto } from './dto/query-questions.dto';
@@ -15,6 +18,7 @@ import { CreateQuestionBankDto } from './dto/create-question-bank.dto';
 import { CacheService } from '../redis/cache.service';
 import * as XLSX from 'xlsx';
 import * as crypto from 'crypto';
+import type { SubmissionStore } from '../database/sharding/submission-store';
 
 @Injectable()
 export class QuestionsService {
@@ -26,6 +30,7 @@ export class QuestionsService {
     @InjectRepository(AuditLogEntity)
     private readonly auditLogRepository: Repository<AuditLogEntity>,
     private readonly cacheService: CacheService,
+    @Optional() private readonly submissionStore?: SubmissionStore,
   ) {}
 
   private normalizeCategories(categories: string[]): string[] {
@@ -42,6 +47,10 @@ export class QuestionsService {
     const qb = this.questionRepository.createQueryBuilder('question')
       .leftJoinAndSelect('question.createdBy', 'createdBy')
       .leftJoinAndSelect('question.approvedBy', 'approvedBy');
+
+    if (query.batchId) {
+      qb.andWhere('question.bulk_upload_batch_id = :batchId', { batchId: query.batchId });
+    }
 
     if (query.status && query.status !== 'all') {
       const normalizedStatus = query.status.trim().toLowerCase();
@@ -168,6 +177,142 @@ export class QuestionsService {
         approved: approvedCount,
       },
     };
+  }
+
+  async getBulkUploadBatches(page = 1, limit = 20) {
+    const safePage = Math.max(1, Number(page) || 1);
+    const safeLimit = Math.min(100, Math.max(1, Number(limit) || 20));
+    const [batches, total] = await this.questionRepository.manager
+      .getRepository(QuestionBulkUploadBatch)
+      .findAndCount({
+        relations: { uploadedBy: true },
+        order: { createdAt: 'DESC' },
+        skip: (safePage - 1) * safeLimit,
+        take: safeLimit,
+      });
+    return {
+      batches: batches.map(({ uploadedBy, ...batch }) => ({
+        ...batch,
+        totalRows: batch.totalQuestions,
+        successCount: batch.successfulQuestions,
+        failureCount: batch.failedQuestions,
+        uploader: uploadedBy ? { id: uploadedBy.id, name: uploadedBy.name, email: uploadedBy.email } : null,
+      })),
+      pagination: { page: safePage, limit: safeLimit, total, totalPages: Math.ceil(total / safeLimit) || 1 },
+    };
+  }
+
+  async deleteBulkUploadBatch(id: string, mode: 'history' | 'with-questions') {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) {
+      throw new BadRequestException('Invalid bulk upload batch ID');
+    }
+    if (!['history', 'with-questions'].includes(mode)) {
+      throw new BadRequestException('Deletion mode must be history or with-questions');
+    }
+
+    return this.questionRepository.manager.transaction(async (manager) => {
+      const batchRepository = manager.getRepository(QuestionBulkUploadBatch);
+      const batch = await batchRepository.findOne({
+        where: { id },
+        lock: { mode: 'pessimistic_write' },
+      });
+      if (!batch) throw new NotFoundException('Bulk upload batch not found');
+
+      if (mode === 'history') {
+        await batchRepository.delete(id);
+        return { success: true, mode, batchId: id, deletedQuestions: 0 };
+      }
+
+      const questions = await manager
+        .getRepository(QuestionEntity)
+        .createQueryBuilder('question')
+        .select(['question.id', 'question.mongoId'])
+        .where('question.bulk_upload_batch_id = :id', { id })
+        .setLock('pessimistic_write')
+        .getMany();
+      const questionIds = questions.map((question) => question.id);
+      const referencedIds = [...new Set(questions.flatMap((question) => [question.id, question.mongoId].filter(Boolean) as string[]))];
+
+      if (questionIds.length) {
+        const uuidIds = questionIds;
+        if (this.submissionStore?.isSharded) {
+          const shardedSubmissions = await this.submissionStore.count({
+            where: { problemSource: 'question', problemId: In(uuidIds) },
+          });
+          if (shardedSubmissions > 0) {
+            throw new ConflictException('Questions in this batch have submissions. Delete is blocked to preserve submission history.');
+          }
+        }
+        const dependencyRows = await manager.query(
+          `SELECT 'assessments' AS dependency, count(*)::int AS count
+             FROM assessments a
+            WHERE a.questions && $1::text[]
+               OR EXISTS (
+                    SELECT 1
+                      FROM jsonb_array_elements(CASE WHEN jsonb_typeof(a.sections) = 'array' THEN a.sections ELSE '[]'::jsonb END) section
+                      CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(section->'questions') = 'array' THEN section->'questions' ELSE '[]'::jsonb END) item
+                     WHERE item->>'questionId' = ANY($1::text[])
+                  )
+           UNION ALL
+           SELECT 'assessment attempts' AS dependency, count(*)::int AS count
+             FROM assessment_attempts a
+            WHERE a."questionOrder" && $1::text[]
+               OR EXISTS (
+                    SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(a.responses) = 'array' THEN a.responses ELSE '[]'::jsonb END) item
+                     WHERE item->>'questionId' = ANY($1::text[])
+                  )
+           UNION ALL
+           SELECT 'question banks' AS dependency, count(*)::int AS count FROM question_banks b WHERE b.questions && $2::uuid[]
+           UNION ALL
+           SELECT 'contests' AS dependency, count(*)::int AS count FROM contests c WHERE c.problems && $1::text[]
+           UNION ALL
+           SELECT 'student records' AS dependency, count(*)::int AS count FROM users u WHERE u."solvedProblems" && $1::text[] OR u."bookmarkedProblems" && $1::text[]
+           UNION ALL
+           SELECT 'discussions' AS dependency, count(*)::int AS count FROM discussions d WHERE d."problemId" = ANY($1::text[])
+           UNION ALL
+           SELECT 'submissions' AS dependency, count(*)::int AS count FROM submissions s WHERE s."problemSource" = 'question' AND s."problemId" = ANY($2::uuid[])`,
+          [referencedIds, uuidIds],
+        );
+
+        const dependencies = dependencyRows
+          .filter((row: { count: number | string }) => Number(row.count) > 0)
+          .map((row: { dependency: string }) => row.dependency);
+        if (dependencies.length) {
+          throw new ConflictException(`Cannot delete this batch because its questions are referenced by ${dependencies.join(', ')}.`);
+        }
+      }
+
+      if (questionIds.length) await manager.delete(QuestionEntity, { bulk_upload_batch_id: id });
+      await batchRepository.delete(id);
+      return { success: true, mode, batchId: id, deletedQuestions: questionIds.length };
+    });
+  }
+
+  private async createImportBatch(fileName: string, questionType: 'MCQ' | 'CODING', totalRows: number, adminUser: any) {
+    const batchRepository = this.questionRepository.manager.getRepository(QuestionBulkUploadBatch);
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const batchCode = `#${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+      try {
+        return await batchRepository.save(batchRepository.create({
+          batchCode,
+          questionType,
+          batchName: batchCode,
+          originalFilename: fileName.slice(0, 500),
+          uploaded_by_id: adminUser?.id || adminUser?._id || undefined,
+          totalQuestions: totalRows,
+          successfulQuestions: 0,
+          failedQuestions: totalRows,
+          failureDetails: [],
+          metadata: {},
+          status: 'PROCESSING',
+        }));
+      } catch (error: any) {
+        if (error?.code === '23505' && attempt < 3) continue;
+        console.error('Failed to create question bulk-upload batch', error);
+        throw error;
+      }
+    }
+    throw new Error('Unable to generate a unique bulk-upload batch code');
   }
 
   async findById(id: string, isStudent = false) {
@@ -1395,27 +1540,29 @@ export class QuestionsService {
     // Retrieve potential database matches for all topics in the file
     const allTopics = [...new Set(parsedRows.map((r) => r.topic).filter(Boolean))];
     const existingDbQuestions = allTopics.length > 0
-      ? await this.questionRepository.find({
-          where: { topic: In(allTopics) },
-          select: {
-            id: true,
-            question: true,
-            slug: true,
-            questionType: true,
-            topic: true,
-            options: true,
-            correctAnswer: true,
-            correctAnswers: true,
-            marks: true,
-            explanation: true,
-            subtopic: true,
-            tags: true,
-          },
-        })
+      ? await this.questionRepository.createQueryBuilder('question')
+          .select([
+            'question.id',
+            'question.question',
+            'question.slug',
+            'question.questionType',
+            'question.topic',
+            'question.options',
+            'question.correctAnswer',
+            'question.correctAnswers',
+            'question.marks',
+            'question.explanation',
+            'question.subtopic',
+            'question.tags',
+          ])
+          .where('question.topic IN (:...topics)', { topics: allTopics })
+          .andWhere('question.status != :archived', { archived: 'archived' })
+          .getMany()
       : [];
-    const existingSlugRows = await this.questionRepository.find({
-      select: { slug: true },
-    });
+    const existingSlugRows = await this.questionRepository.createQueryBuilder('question')
+      .select('question.slug', 'slug')
+      .where('question.slug IS NOT NULL')
+      .getRawMany<{ slug: string }>();
 
     // Map existing questions by content hash and normalized stem for fast lookups
     const dbHashToQuestion = new Map<string, QuestionEntity>();
@@ -1432,35 +1579,33 @@ export class QuestionsService {
       dbStemToQuestions.get(normStemKey)!.push(eq);
     }
 
-    // Slugs share the database's unique constraint across question types.
-    // Reserve existing slugs before generating MCQ import slugs so CSV rows
-    // cannot collide with each other or with a stored question.
+    // Slugs remain globally unique even for archived questions. Keep that
+    // database invariant while allocating a fresh slug for re-imported rows.
     const usedSlugs = new Set(
       existingSlugRows.map((question) => question.slug).filter(Boolean),
     );
     for (const row of parsedRows) {
-      if (row.isCoding) continue;
-      const key = `${row.topic.toLowerCase()}:::${this.normalizeQuestionStem(row.question)}`;
-      const existingMatch = (dbStemToQuestions.get(key) || []).find((candidate) =>
-        ['MCQ', 'single_choice', 'MULTIPLE_CHOICE', 'multiple_choice', 'TRUE_FALSE', 'true_false'].includes(candidate.questionType),
+      if (!row.slug) continue;
+      const stemKey = `${row.topic.toLowerCase()}:::${this.normalizeQuestionStem(row.question)}`;
+      const activeMatch = (dbStemToQuestions.get(stemKey) || []).find((candidate) =>
+        row.isCoding
+          ? ['coding', 'algorithmic', 'DSA'].includes(candidate.questionType)
+          : ['MCQ', 'single_choice', 'MULTIPLE_CHOICE', 'multiple_choice', 'TRUE_FALSE', 'true_false'].includes(candidate.questionType),
       );
-      if (!row.slugProvided) {
-        if (existingMatch?.slug) {
-          row.slug = existingMatch.slug;
-        } else {
-          const base = row.slug || 'mcq';
-          let candidate = base;
-          let suffix = 2;
-          while (usedSlugs.has(candidate)) candidate = `${base}-${suffix++}`;
-          row.slug = candidate;
-        }
-      } else if (usedSlugs.has(row.slug) && existingMatch?.slug !== row.slug) {
-        row.slugCollision = true;
+      if (activeMatch?.slug) {
+        row.slug = activeMatch.slug;
+        usedSlugs.add(row.slug);
+        continue;
       }
-      if (row.slug) usedSlugs.add(row.slug);
+      const base = row.slug;
+      let candidate = base;
+      let suffix = 2;
+      while (usedSlugs.has(candidate)) candidate = `${base}-${suffix++}`;
+      row.slug = candidate;
+      usedSlugs.add(candidate);
     }
 
-    const errors: { row: number; question?: string; error: string; isDuplicate?: boolean }[] = [];
+    const errors: { row: number; question?: string; questionType?: string; error: string; isDuplicate?: boolean }[] = [];
     const validRows: any[] = [];
     let duplicatesInFile = 0;
     let exactDuplicatesCount = 0;
@@ -1606,6 +1751,7 @@ export class QuestionsService {
         errors.push({
           row: row.rowNumber,
           question: row.question || `Row ${row.rowNumber}`,
+          questionType: row.isCoding ? 'coding' : 'mcq',
           error: rowErrors.join('. '),
           isDuplicate: isFileDuplicate,
         });
@@ -1725,9 +1871,44 @@ export class QuestionsService {
     ip = '',
     userAgent = '',
     mergeStrategy: 'skip' | 'update' | 'merge' = 'skip',
+    batchContext?: { fileName: string; totalRows: number; invalidCodingCount?: number },
   ) {
-    if (!validRows || validRows.length === 0) {
+    if ((!validRows || validRows.length === 0) && !batchContext) {
       throw new BadRequestException('No valid question rows to import.');
+    }
+
+    const invalidCodingCount = Number(batchContext?.invalidCodingCount) || 0;
+    const invalidMcqCount = Math.max(0, (batchContext?.totalRows || 0) - (validRows?.length || 0) - invalidCodingCount);
+    const batches = batchContext
+      ? await Promise.all((['MCQ', 'CODING'] as const)
+          .filter((type) => validRows.some((row) => (row.questionType === 'coding') === (type === 'CODING')) || type === 'CODING' && invalidCodingCount > 0 || type === 'MCQ' && invalidMcqCount > 0)
+          .map((type) => this.createImportBatch(
+            batchContext.fileName,
+            type,
+            validRows.filter((row) => (row.questionType === 'coding') === (type === 'CODING')).length + (type === 'CODING' ? invalidCodingCount : invalidMcqCount),
+            adminUser,
+          )))
+      : [];
+
+    if (!validRows || validRows.length === 0) {
+      if (batches.length) {
+        await Promise.all(batches.map((batch) => this.questionRepository.manager.getRepository(QuestionBulkUploadBatch).update(batch.id, {
+          successfulQuestions: 0,
+          failedQuestions: batch.totalQuestions,
+          status: 'FAILED',
+        })));
+      }
+      return {
+        success: true,
+        message: 'No questions were imported because every row failed validation.',
+        count: 0,
+        totalProcessed: 0,
+        insertedCount: 0,
+        updatedCount: 0,
+        skippedCount: 0,
+        mergeStrategy,
+        batches: batches.map((batch) => ({ id: batch.id, batchCode: batch.batchCode, questionType: batch.questionType, createdAt: batch.createdAt })),
+      };
     }
 
     const docs = validRows.map((r) => {
@@ -1835,9 +2016,14 @@ export class QuestionsService {
     let totalInserted = 0;
     let totalUpdated = 0;
     let totalSkipped = 0;
+    const insertedByType: Record<'MCQ' | 'CODING', number> = { MCQ: 0, CODING: 0 };
+    const updatedByType: Record<'MCQ' | 'CODING', number> = { MCQ: 0, CODING: 0 };
+    const skippedByType: Record<'MCQ' | 'CODING', number> = { MCQ: 0, CODING: 0 };
+    const totalProcessed = docs.length;
 
     // Execute transactional import with merge strategy protection
-    await this.questionRepository.manager.transaction(async (manager) => {
+    try {
+      await this.questionRepository.manager.transaction(async (manager) => {
       for (const doc of docs) {
         let existing: QuestionEntity | null = null;
 
@@ -1851,10 +2037,12 @@ export class QuestionsService {
             where: { question: doc.question, topic: doc.topic },
           });
         }
+        if (existing?.status === 'archived') existing = null;
 
         if (existing) {
           if (mergeStrategy === 'skip') {
             totalSkipped++;
+            skippedByType[doc.questionType === 'coding' ? 'CODING' : 'MCQ']++;
             continue;
           }
 
@@ -1903,6 +2091,7 @@ export class QuestionsService {
 
             await manager.save(existing);
             totalUpdated++;
+            updatedByType[doc.questionType === 'coding' ? 'CODING' : 'MCQ']++;
           } else if (mergeStrategy === 'merge') {
             // Safe merge: preserve existing answers, options, and marks, but enrich missing metadata
             if (!existing.subtopic && doc.subtopic) existing.subtopic = doc.subtopic;
@@ -1932,18 +2121,56 @@ export class QuestionsService {
             };
             await manager.save(existing);
             totalUpdated++;
+            updatedByType[doc.questionType === 'coding' ? 'CODING' : 'MCQ']++;
           }
         } else {
           const { existingQuestionId, matchStatus, ...newDocData } = doc;
-          const newDoc = manager.create(QuestionEntity, newDocData as any);
+          const newDoc = manager.create(QuestionEntity, {
+            ...newDocData,
+          ...(batchContext ? { bulk_upload_batch_id: batches.find((batch) => batch.questionType === (doc.questionType === 'coding' ? 'CODING' : 'MCQ'))?.id } : {}),
+          } as any);
           await manager.save(newDoc);
           totalInserted++;
+          insertedByType[doc.questionType === 'coding' ? 'CODING' : 'MCQ']++;
         }
       }
-    });
+        if (batches.length) {
+          const transactionalBatchRepository = manager.getRepository(QuestionBulkUploadBatch);
+          for (const batch of batches) {
+            const successCount = insertedByType[batch.questionType];
+            const failedCount = batchContext?.invalidCodingCount !== undefined
+              ? batch.questionType === 'CODING'
+                ? invalidCodingCount
+                : invalidMcqCount
+              : 0;
+            await transactionalBatchRepository.update(batch.id, {
+              successfulQuestions: successCount,
+              failedQuestions: failedCount,
+              status: failedCount > 0
+                ? successCount > 0 ? 'PARTIALLY_COMPLETED' : 'FAILED'
+                : 'COMPLETED',
+              metadata: {
+                mergeStrategy,
+                insertedCount: successCount,
+                updatedCount: updatedByType[batch.questionType],
+                skippedCount: skippedByType[batch.questionType],
+              } as any,
+            } as any);
+          }
+        }
+      });
+    } catch (error) {
+      if (batches.length) {
+        await Promise.all(batches.map((batch) => this.questionRepository.manager.getRepository(QuestionBulkUploadBatch).update(batch.id, {
+          successfulQuestions: 0,
+          failedQuestions: batch.totalQuestions,
+          status: 'FAILED',
+        }))).catch((trackingError) => console.error('Failed to mark question bulk-upload batch as failed', trackingError));
+      }
+      throw error;
+    }
 
     await this.cacheService.invalidatePrefix('problems:');
-    const totalProcessed = docs.length;
 
     const auditLog = this.auditLogRepository.create({
       actorId: adminUser?.id || adminUser?._id,
@@ -1973,6 +2200,7 @@ export class QuestionsService {
       updatedCount: totalUpdated,
       skippedCount: totalSkipped,
       mergeStrategy,
+      ...(batches.length ? { batches: batches.map(({ id, batchCode, questionType, createdAt }) => ({ id, batchCode, questionType, createdAt })) } : {}),
     };
   }
 
@@ -1983,6 +2211,7 @@ export class QuestionsService {
     userAgent = '',
     mergeStrategy: 'skip' | 'update' | 'merge' = 'skip',
     sheetName?: string,
+    fileName = 'upload',
   ) {
     const preview = await this.parseAndValidateQuestionsImport(fileBuffer, sheetName, true);
     if (!preview.selectedSheet) {
@@ -1999,6 +2228,11 @@ export class QuestionsService {
       ip,
       userAgent,
       mergeStrategy,
+      {
+        fileName,
+        totalRows: preview.summary.totalRows,
+        invalidCodingCount: preview.errors.filter((row: any) => row.questionType === 'coding').length,
+      },
     );
     return {
       success: true,

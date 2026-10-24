@@ -17,6 +17,8 @@ const contest = {
   description: 'Description',
   isPublished: true,
   isPrivate: false,
+  contestFormat: 'coding',
+  resultsPublished: false,
   password: 'SECRET-PASSWORD',
   participants: [userId],
   problems: [id],
@@ -24,7 +26,12 @@ const contest = {
   endTime: new Date(Date.now() + 3600000),
   antiCheatConfig: { warningLimit: 3 },
 };
-function setup(submissions?: unknown) {
+function setup(
+  submissions?: unknown,
+  bankQuestions: Array<Record<string, any>> = [],
+  contestOverrides: Partial<typeof contest> = {},
+) {
+  const currentContest = { ...contest, ...contestOverrides };
   const builder = {
     insert: jest.fn(),
     values: jest.fn(),
@@ -44,9 +51,9 @@ function setup(submissions?: unknown) {
   ] as const)
     builder[key].mockReturnValue(builder);
   const contests = {
-    find: jest.fn().mockResolvedValue([contest]),
-    findOne: jest.fn().mockResolvedValue(contest),
-    save: jest.fn().mockResolvedValue(contest),
+    find: jest.fn().mockResolvedValue([currentContest]),
+    findOne: jest.fn().mockResolvedValue(currentContest),
+    save: jest.fn().mockResolvedValue(currentContest),
   };
   const attempts = {
     query: jest
@@ -64,8 +71,10 @@ function setup(submissions?: unknown) {
     getExecutionProblem: jest
       .fn()
       .mockResolvedValue({ id, title: 'Real problem', slug: 'real-problem' }),
+    getContestProblemBySlug: jest.fn().mockResolvedValue({ data: { id, title: 'Real problem' } }),
   };
   const questions = {
+    find: jest.fn().mockResolvedValue(bankQuestions),
     findOne: jest.fn().mockResolvedValue(null),
   };
   const metadata = {
@@ -89,6 +98,17 @@ function setup(submissions?: unknown) {
     builder,
   };
 }
+it('serves selected contest problem details only to registered participants', async () => {
+  const { service, problems } = setup();
+  expect(await service.getContestProblem(id, 'real-problem', userId)).toEqual({ data: { id, title: 'Real problem' } });
+  expect(problems.getContestProblemBySlug).toHaveBeenCalledWith('real-problem');
+
+  const unselected = setup(undefined, [], { problems: ['another-id'] });
+  await expect(unselected.service.getContestProblem(id, 'real-problem', userId)).rejects.toBeInstanceOf(NotFoundException);
+
+  const notRegistered = setup(undefined, [], { participants: [] });
+  await expect(notRegistered.service.getContestProblem(id, 'real-problem', userId)).rejects.toBeInstanceOf(ForbiddenException);
+});
 it('merges sharded contest results, keeps zero-score participants, and ranks ties by solve time', async () => {
   const second = '00000000-0000-4000-8000-000000000003';
   const third = '00000000-0000-4000-8000-000000000004';
@@ -123,6 +143,46 @@ it('merges sharded contest results, keeps zero-score participants, and ranks tie
     ],
   );
   expect(attempts.query.mock.calls[0][0]).not.toContain('JOIN submissions');
+});
+
+it('uses persisted attempt totals for mixed and MCQ contest leaderboards', async () => {
+  const { service, attempts } = setup(undefined, [], { contestFormat: 'mixed', resultsPublished: true });
+  attempts.query.mockResolvedValueOnce([
+    { name: 'Candidate', username: 'candidate', solved: 2, score: 115 },
+  ]);
+  const result = await service.leaderboard('real-contest');
+  expect(attempts.query.mock.calls[0][0]).toContain('ca."problemsSolved"');
+  expect(result).toMatchObject({
+    resultsPublished: true,
+    leaderboard: [{ name: 'Candidate', username: 'candidate', solved: 2, totalProblems: 1 }],
+  });
+});
+
+it('delivers eligible MCQ details without answers and grades unique selected answers on the server', async () => {
+  const mcq = {
+    id: 'mcq-id', question: 'Pick the right answer', title: 'Choice', slug: 'choice',
+    questionType: 'MCQ', options: ['Right', 'Wrong'], correctAnswer: 0, correctAnswers: [0],
+    marks: 5, negativeMarks: 1, status: 'active',
+    metadata: { visibility: 'Published', contestOnly: true },
+  };
+  const { service, attempts } = setup(undefined, [mcq], { contestFormat: 'mcq', problems: [mcq.id] });
+  const started = await service.startAttempt(id, userId);
+  expect(started.problems[0]).toEqual(expect.objectContaining({ id: mcq.id, question: mcq.question, options: mcq.options, questionType: 'MCQ' }));
+  expect(started.problems[0]).not.toHaveProperty('correctAnswer');
+  expect(started.problems[0]).not.toHaveProperty('correctAnswers');
+
+  const result = await service.submitAttempt(id, userId, 'real-session', [
+    { questionId: mcq.id, selectedAnswers: [0] },
+  ]);
+  expect(result).toEqual(expect.objectContaining({ score: 5, problemsSolved: 1 }));
+  expect(attempts.createQueryBuilder().set).toHaveBeenCalledWith(expect.objectContaining({ score: 5, problemsSolved: 1 }));
+  await expect(service.submitAttempt(id, userId, 'real-session', [
+    { questionId: mcq.id, selectedAnswers: [0] },
+    { questionId: mcq.id, selectedAnswers: [1] },
+  ])).rejects.toThrow('Duplicate MCQ answers');
+  await expect(service.submitAttempt(id, userId, 'real-session', [
+    { questionId: 'outside-id', selectedAnswer: 0 },
+  ])).rejects.toThrow('Answer does not match an eligible MCQ');
 });
 it('lists published public database contests and exposes no passwords or participant IDs', async () => {
   const { service, contests } = setup();

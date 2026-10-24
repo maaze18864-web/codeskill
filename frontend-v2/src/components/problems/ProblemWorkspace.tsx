@@ -80,7 +80,7 @@ const CONTEST_SIDEBAR_TABS = SIDEBAR_TABS.filter((t) =>
   ["description", "samples", "submissions", "notes"].includes(t.id),
 );
 
-export default function ProblemWorkspace({ params, embedded = false }: { params: Promise<{ id: string }>; embedded?: boolean }) {
+export default function ProblemWorkspace({ params, embedded = false, contestId }: { params: Promise<{ id: string }>; embedded?: boolean; contestId?: string }) {
   const unwrappedParams = use(params);
   const problemId = unwrappedParams.id;
   const { theme } = useTheme();
@@ -165,11 +165,11 @@ export default function ProblemWorkspace({ params, embedded = false }: { params:
 
   useEffect(() => {
     setLoading(true);
-    problemsAPI.getBySlug(problemId)
+    (contestId ? problemsAPI.getContestProblem(contestId, problemId) : problemsAPI.getBySlug(problemId))
       .then(res => setProblem(res.data.data))
       .catch(() => setProblem(null))
       .finally(() => setLoading(false));
-  }, [problemId]);
+  }, [problemId, contestId]);
 
   // Draft Restoration
   useEffect(() => {
@@ -477,6 +477,7 @@ export default function ProblemWorkspace({ params, embedded = false }: { params:
     try {
       const submitRes = await submissionAPI.submit({
         problemId: problem._id || problem.id,
+        contestId,
         language,
         code,
         category: problem.categories?.[0] || "General",
@@ -1276,7 +1277,7 @@ export default function ProblemWorkspace({ params, embedded = false }: { params:
               {/* Sticky Ask Me Anything Assistant Bar */}
               {!embedded && (
                 <div className="p-3 border-t border-border bg-card/95 backdrop-blur-sm shrink-0">
-                  <form 
+                  <form
                     onSubmit={(e) => {
                       e.preventDefault();
                       if (!askQuery.trim()) return;

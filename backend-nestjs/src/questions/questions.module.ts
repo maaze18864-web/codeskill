@@ -6,9 +6,10 @@ import {
   QuestionBanksController,
 } from './questions.controller';
 import { QuestionsService } from './questions.service';
+import { SubmissionShardingModule } from '../database/sharding/sharding.module';
 
 @Module({
-  imports: [DatabaseModule, RedisModule],
+  imports: [DatabaseModule, RedisModule, SubmissionShardingModule],
   controllers: [QuestionsController, QuestionBanksController],
   providers: [QuestionsService],
   exports: [QuestionsService],

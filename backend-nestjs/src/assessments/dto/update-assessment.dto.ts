@@ -9,6 +9,7 @@ import {
   Min,
   ValidateNested,
   Matches,
+  Max,
 } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
 import { AssessmentSectionDto } from './create-assessment.dto';
@@ -59,6 +60,11 @@ class UpdateAssessmentProctoringDto {
 }
 
 export class UpdateAssessmentDto {
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(10000)
+  labMaxScore?: number;
   @IsString()
   @IsNotEmpty()
   @IsOptional()
@@ -135,7 +141,8 @@ export class UpdateAssessmentDto {
   })
   @Matches(/^[A-Za-z0-9_\-]{1,16}$/, {
     each: true,
-    message: 'Each targetSection must be a valid section identifier (e.g. A1, B4)',
+    message:
+      'Each targetSection must be a valid section identifier (e.g. A1, B4)',
   })
   @IsString({ each: true })
   @IsOptional()

@@ -16,7 +16,7 @@ import { type PublicContest } from "@/lib/contests";
 
 interface AttemptContext {
   contest: PublicContest; sessionId: string; startedAt: string;
-  problems: Array<{ id: string; title: string; slug: string }>;
+  problems: Array<{ id: string; title: string; slug: string; question?: string; questionType?: string; options?: string[]; marks?: number; negativeMarks?: number }>;
   antiCheatConfig: {
     enableFullscreen: boolean; enableCopyProtect: boolean; enablePasteProtect: boolean;
     enableDevToolsDetect: boolean; enableTabSwitchDetect: boolean; warningLimit: number;
@@ -33,6 +33,7 @@ function ContestSession({ id }: { id: string }) {
   const [submissionError, setSubmissionError] = useState(""); const [retry, setRetry] = useState(0);
   const [hasStarted, setHasStarted] = useState(false); const [busy, setBusy] = useState(false); const [ended, setEnded] = useState(false);
   const [confirm, setConfirm] = useState(false); const [selected, setSelected] = useState(0); const [now, setNow] = useState(Date.now);
+  const [answers, setAnswers] = useState<Record<string, number[]>>({});
   const submission = useRef(false);
   const startRequest = useRef<AbortController | null>(null);
   const finishRequest = useRef<AbortController | null>(null);
@@ -75,13 +76,16 @@ function ContestSession({ id }: { id: string }) {
     if (automatic) setEnded(true);
     const controller = new AbortController(); finishRequest.current = controller;
     try {
-      await api.post(`/contests/${encodeURIComponent(id)}/submit`, { sessionId: context.sessionId }, { signal: controller.signal });
+      await api.post(`/contests/${encodeURIComponent(id)}/submit`, {
+        sessionId: context.sessionId,
+        answers: Object.entries(answers).map(([questionId, selectedAnswers]) => ({ questionId, selectedAnswers })),
+      }, { signal: controller.signal });
       if (controller.signal.aborted) return;
       setEnded(true);
       router.replace(`/contests/leaderboard?contest=${encodeURIComponent(context.contest.slug)}`);
     } catch { if (!controller.signal.aborted) { setSubmissionError("Your contest could not be finalized. Please retry submission."); submission.current = false; } }
     finally { if (!controller.signal.aborted) setBusy(false); }
-  }, [id, context, router]);
+  }, [id, context, router, answers]);
   const autoSubmit = useCallback(() => { void finish(true); }, [finish]);
   const proctor = useAntiCheatMaster(
     id,
@@ -116,6 +120,19 @@ function ContestSession({ id }: { id: string }) {
     return () => clearInterval(timer);
   }, [context, ended, finish]);
   const problem = context?.problems[selected];
+  const isMcq = !!problem && problem.questionType && !["dsa", "coding", "algorithmic"].includes(problem.questionType.toLowerCase());
+  const selectedAnswers = problem ? answers[problem.id] || [] : [];
+  const toggleAnswer = (answerIndex: number) => {
+    if (!problem) return;
+    setAnswers((current) => {
+      const previous = current[problem.id] || [];
+      const multiple = ["multiple_choice"].includes(problem.questionType?.toLowerCase() || "");
+      const next = previous.includes(answerIndex)
+        ? previous.filter((value) => value !== answerIndex)
+        : multiple ? [...previous, answerIndex] : [answerIndex];
+      return { ...current, [problem.id]: next };
+    });
+  };
   const workspaceParams = useMemo(() => Promise.resolve({ id: problem?.slug || "" }), [problem?.slug]);
   if (authLoading || (!preview && !error && user)) return <div role="status" className="min-h-screen flex justify-center items-center gap-3"><Spinner />Loading contest session...</div>;
   if (!user) return <div className="pt-28 p-8 text-center space-y-4"><h1 className="text-2xl font-bold">Sign in to participate</h1><Link href="/login" className="text-primary hover:underline">Log In</Link></div>;
@@ -143,7 +160,7 @@ function ContestSession({ id }: { id: string }) {
     <SubmissionConfirmationDialog isOpen={confirm} onClose={() => setConfirm(false)} onConfirm={() => void finish()} fullName={user.name} username={user.username || user.uid || user.name} contestName={context.contest.title} warnings={proctor.warnings} elapsedSeconds={elapsed} />
     <header className="border-b border-border bg-card px-4 py-3 flex flex-wrap gap-3 justify-between items-center shrink-0 z-50"><div className="min-w-0"><h1 className="font-bold truncate">{context.contest.title}</h1><p className="text-xs text-muted-foreground">{user.name} · Warnings {proctor.warnings} / {proctor.warningLimit}</p></div><div className="flex items-center gap-3"><span className="font-mono text-sm">{Math.floor(remaining / 3600).toString().padStart(2, "0")}:{Math.floor(remaining / 60 % 60).toString().padStart(2, "0")}:{(remaining % 60).toString().padStart(2, "0")}</span><Button size="sm" disabled={busy} onClick={() => ended ? void finish(true) : setConfirm(true)}>{busy ? "Submitting..." : ended ? "Retry submission" : "Finish Contest"}</Button></div></header>
     {error && <p role="alert" className="px-4 py-2 text-destructive shrink-0">{error}</p>}
-    {ended ? <div className="p-8 text-center">This contest session has ended.</div> : <><nav aria-label="Contest problems" className="flex gap-2 overflow-x-auto p-2 border-b border-border shrink-0">{context.problems.map((item, index) => <button key={item.id} aria-pressed={selected === index} onClick={() => setSelected(index)} className={`px-3 py-2 text-sm rounded-md whitespace-nowrap ${selected === index ? "bg-foreground text-background" : "hover:bg-muted"}`}>{index + 1}. {item.title}</button>)}</nav><div className="flex-1 min-h-0"><Suspense fallback={<div role="status" className="p-8">Loading problem...</div>}>{problem ? <ProblemWorkspace key={problem.id} params={workspaceParams} embedded /> : <p className="p-8 text-center">No available problems are configured for this contest.</p>}</Suspense></div></>}
+    {ended ? <div className="p-8 text-center">This contest session has ended.</div> : <><nav aria-label="Contest problems" className="flex gap-2 overflow-x-auto p-2 border-b border-border shrink-0">{context.problems.map((item, index) => <button key={item.id} aria-pressed={selected === index} onClick={() => setSelected(index)} className={`px-3 py-2 text-sm rounded-md whitespace-nowrap ${selected === index ? "bg-foreground text-background" : "hover:bg-muted"}`}>{index + 1}. {item.title}</button>)}</nav><div className="flex-1 min-h-0 overflow-y-auto">{problem ? isMcq ? <section className="max-w-3xl mx-auto p-6 sm:p-10 space-y-6"><p className="text-sm font-medium text-muted-foreground">Question {selected + 1} · {problem.marks ?? 1} point{problem.marks === 1 ? "" : "s"}</p><h2 className="text-xl font-semibold leading-relaxed">{problem.question}</h2><div role="group" aria-label="Answer options" className="space-y-3">{(problem.options || []).map((option, index) => { const checked = selectedAnswers.includes(index); return <button key={`${problem.id}-${index}`} type="button" aria-pressed={checked} onClick={() => toggleAnswer(index)} className={`w-full text-left p-4 border rounded-lg transition-colors ${checked ? "border-primary bg-primary/10" : "border-border hover:bg-muted/50"}`}><span className="mr-3 inline-flex h-6 w-6 items-center justify-center rounded-full border border-current text-xs">{String.fromCharCode(65 + index)}</span>{option}</button>; })}</div></section> : <Suspense fallback={<div role="status" className="p-8">Loading problem...</div>}><ProblemWorkspace key={problem.id} params={workspaceParams} contestId={id} embedded /></Suspense> : <p className="p-8 text-center">No available problems are configured for this contest.</p>}</div></>}
     </div>
   </div>;
 }

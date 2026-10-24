@@ -8,7 +8,7 @@ import {
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { randomUUID } from 'crypto';
 import { ProblemsService } from '../problems/problems.service';
 import { Contest } from '../database/entities/contest.entity';
@@ -17,6 +17,26 @@ import { SubmissionStore } from '../database/sharding/submission-store';
 import { ContestReattemptGrant } from '../database/entities/contest-reattempt-grant.entity';
 import { Question } from '../database/entities/question.entity';
 import { ProblemMetadata } from '../database/entities/problem-metadata.entity';
+
+const MCQ_TYPES = ['mcq', 'single_choice', 'multiple_choice', 'true_false'];
+const CODING_TYPES = ['dsa', 'coding', 'algorithmic'];
+
+function contestQuestionType(question: Question) {
+  const type = String(question.questionType || '').toLowerCase();
+  if (MCQ_TYPES.includes(type)) return 'mcq';
+  if (CODING_TYPES.includes(type)) return 'coding';
+  return null;
+}
+
+function isContestQuestionEligible(question: Question) {
+  const metadata = question.metadata || {};
+  return (
+    ['approved', 'active', 'published'].includes(String(question.status || '').toLowerCase()) &&
+    ['published', 'public'].includes(String(metadata.visibility || '').trim().toLowerCase()) &&
+    metadata.contestOnly === true &&
+    contestQuestionType(question) !== null
+  );
+}
 
 @Injectable()
 export class ContestsService {
@@ -100,6 +120,8 @@ export class ContestsService {
       startTime: contest.startTime,
       endTime: contest.endTime,
       problems: contest.problems || [],
+      format: contest.contestFormat || 'coding',
+      contestFormat: contest.contestFormat || 'coding',
       isPrivate: contest.isPrivate,
     };
   }
@@ -176,6 +198,37 @@ export class ContestsService {
         id,
       ),
     );
+    if (contest.contestFormat === 'mcq' || contest.contestFormat === 'mixed') {
+      const rows: Array<{ name: string; username: string; solved: number; score: number }> =
+        await this.attemptRepo.query(
+          `SELECT u.name, u.username,
+                  coalesce(attempt."problemsSolved", 0)::int AS solved,
+                  coalesce(attempt.score, 0)::float AS score
+           FROM users u
+           LEFT JOIN LATERAL (
+             SELECT ca."problemsSolved", ca.score
+             FROM contest_attempts ca
+             WHERE ca.contest_id = $1 AND ca.user_id::text = u.id::text
+             ORDER BY ca."attemptNumber" DESC, ca."updatedAt" DESC
+             LIMIT 1
+           ) attempt ON true
+           WHERE u.id::text = ANY($2::text[])
+           ORDER BY score DESC, solved DESC, u.id ASC
+           LIMIT 100`,
+          [contest.id, contest.participants || []],
+        );
+      return {
+        contest: this.safeContest(contest),
+        resultsPublished: !!contest.resultsPublished,
+        leaderboard: rows.map((row, index) => ({
+          rank: index + 1,
+          name: row.name,
+          username: row.username,
+          solved: Number(row.solved) || 0,
+          totalProblems: problemIds.length,
+        })),
+      };
+    }
     if (this.submissions?.isSharded) {
       return this.shardedLeaderboard(contest, problemIds);
     }
@@ -314,6 +367,14 @@ export class ContestsService {
     };
   }
 
+  async getContestProblem(id: string, slug: string, userId: string) {
+    const contest = await this.eligibleContest(id, userId);
+    const result = await this.problemsService.getContestProblemBySlug(slug);
+    if (!contest.problems?.includes(String(result.data.id)))
+      throw new NotFoundException('Problem not found');
+    return result;
+  }
+
   async startAttempt(id: string, userId: string) {
     const contest = await this.eligibleContest(id, userId);
     const now = Date.now();
@@ -324,9 +385,37 @@ export class ContestsService {
       throw new BadRequestException(
         'Contest is outside its participation window',
       );
+    const bankQuestions = this.questionRepo && contest.problems?.length
+      ? await this.questionRepo.find({ where: { id: In(contest.problems) } })
+      : [];
+    const questionById = new Map(bankQuestions.map((question) => [question.id, question]));
     const problems = (
       await Promise.all(
         (contest.problems || []).map(async (problemId) => {
+          const question = questionById.get(problemId);
+          if (question) {
+            if (!isContestQuestionEligible(question))
+              throw new BadRequestException('A selected question is no longer eligible for this contest');
+            const type = contestQuestionType(question);
+            if (type === 'mcq') {
+              if (contest.contestFormat === 'coding')
+                throw new BadRequestException('MCQ questions are not valid for this contest format');
+              return {
+                id: question.id,
+                title: question.title || question.question,
+                slug: question.slug || `question-${question.id}`,
+                question: question.question,
+                questionType: question.questionType,
+                options: question.options || [],
+                marks: question.marks,
+                negativeMarks: question.negativeMarks,
+              };
+            }
+            if (contest.contestFormat === 'mcq')
+              throw new BadRequestException('Coding questions are not valid for this contest format');
+          } else if (contest.contestFormat === 'mcq') {
+            throw new BadRequestException('A selected question is no longer eligible for this contest');
+          }
           try {
             const problem =
               await this.problemsService.getExecutionProblem(problemId);
@@ -538,7 +627,12 @@ export class ContestsService {
     };
   }
 
-  async submitAttempt(id: string, userId: string, sessionId: string) {
+  async submitAttempt(
+    id: string,
+    userId: string,
+    sessionId: string,
+    answers: Array<{ questionId: string; selectedAnswer?: number; selectedAnswers?: number[] }> = [],
+  ) {
     const contest = await this.eligibleContest(id, userId);
     const attempt = await this.attemptRepo.findOne({
       where: { contest_id: contest.id, user_id: userId, sessionId },
@@ -547,7 +641,47 @@ export class ContestsService {
       throw new ForbiddenException('Invalid contest session');
 
     // Calculate score & problemsSolved from submissions
+    const answerIds = answers.map((answer) => String(answer.questionId));
+    if (new Set(answerIds).size !== answerIds.length)
+      throw new BadRequestException('Duplicate MCQ answers are not allowed');
+    const bankQuestions = this.questionRepo && contest.problems?.length
+      ? await this.questionRepo.find({ where: { id: In(contest.problems) } })
+      : [];
+    const questionById = new Map(bankQuestions.map((question) => [question.id, question]));
+    let mcqScore = 0;
+    let mcqCorrect = 0;
+    for (const answer of answers) {
+      const questionId = String(answer.questionId);
+      const question = questionById.get(questionId);
+      if (
+        !question ||
+        !contest.problems?.includes(questionId) ||
+        contestQuestionType(question) !== 'mcq' ||
+        !isContestQuestionEligible(question)
+      )
+        throw new BadRequestException('Answer does not match an eligible MCQ in this contest');
+      const selected = Array.isArray(answer.selectedAnswers)
+        ? [...new Set(answer.selectedAnswers)].sort((a, b) => a - b)
+        : Number.isInteger(answer.selectedAnswer) && answer.selectedAnswer! >= 0
+          ? [answer.selectedAnswer!]
+          : [];
+      if (selected.some((index) => index >= (question.options || []).length))
+        throw new BadRequestException('Selected answer is out of range');
+      const correct = Array.isArray(question.correctAnswers) && question.correctAnswers.length
+        ? [...new Set(question.correctAnswers)].sort((a, b) => a - b)
+        : [question.correctAnswer];
+      const isCorrect = selected.length === correct.length && selected.every((value, index) => value === correct[index]);
+      if (isCorrect) {
+        mcqScore += Number(question.marks) || 0;
+        mcqCorrect++;
+      } else if (selected.length) {
+        mcqScore -= Number(question.negativeMarks) || 0;
+      }
+    }
+
+    const mcqIds = new Set(bankQuestions.filter((question) => contestQuestionType(question) === 'mcq').map((question) => question.id));
     const problemIds = (contest.problems || []).filter((pid) =>
+      !mcqIds.has(pid) &&
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(pid),
     );
     let problemsSolved = 0;
@@ -577,7 +711,9 @@ export class ContestsService {
       }
     }
 
-    const score = problemsSolved * 100;
+    const codingSolved = problemsSolved;
+    problemsSolved += mcqCorrect;
+    const score = codingSolved * 100 + mcqScore;
 
     await this.attemptRepo
       .createQueryBuilder()

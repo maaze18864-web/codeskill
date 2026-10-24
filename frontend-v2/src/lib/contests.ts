@@ -6,6 +6,7 @@ export interface PublicContest {
   startTime: string;
   endTime: string;
   problems: string[];
+  format?: "mcq" | "coding" | "mixed";
   isPrivate: boolean;
 }
 export function parseContests(body: unknown): PublicContest[] {

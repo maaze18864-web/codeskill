@@ -63,7 +63,9 @@ export class AssessmentsStudentController {
   }
 
   @Post(':id/verify-identity')
-  @ApiOperation({ summary: 'Verify candidate identity before assessment start' })
+  @ApiOperation({
+    summary: 'Verify candidate identity before assessment start',
+  })
   async verifyIdentity(
     @Param('id') id: string,
     @Body() dto: VerifyIdentityDto,
@@ -73,7 +75,9 @@ export class AssessmentsStudentController {
   }
 
   @Post(':id/violations')
-  @ApiOperation({ summary: 'Record timestamped proctoring violation and secure evidence' })
+  @ApiOperation({
+    summary: 'Record timestamped proctoring violation and secure evidence',
+  })
   @Throttle({
     short: { limit: 20, ttl: 1000 },
     medium: { limit: 120, ttl: 10000 },
@@ -88,7 +92,9 @@ export class AssessmentsStudentController {
   }
 
   @Post(':id/proctor-capture')
-  @ApiOperation({ summary: 'Receive proctoring frame capture from @peepl/proctoring' })
+  @ApiOperation({
+    summary: 'Receive proctoring frame capture from @peepl/proctoring',
+  })
   @Throttle({
     short: { limit: 20, ttl: 1000 },
     medium: { limit: 120, ttl: 10000 },
@@ -147,6 +153,19 @@ export class AssessmentsStudentController {
     @CurrentUser() studentUser: any,
   ) {
     return this.assessmentsService.evaluateCode(id, dto, studentUser);
+  }
+  @Post(':id/run-sql')
+  @Throttle({
+    short: { limit: 3, ttl: 1000 },
+    medium: { limit: 10, ttl: 10000 },
+    long: { limit: 30, ttl: 60000 },
+  })
+  runSql(
+    @Param('id') id: string,
+    @Body() dto: EvaluateAssessmentCodeDto,
+    @CurrentUser() studentUser: any,
+  ) {
+    return this.assessmentsService.evaluateCode(id, dto, studentUser, true);
   }
 
   @Get(':id/result')

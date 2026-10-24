@@ -19,6 +19,7 @@ import { applyQuestionBulkUploadBatchesMigration } from './migrations/question-b
 import { applyLearningModuleMigration } from './migrations/learning-module';
 import { applyProblemConfigDefaultLanguageMigration } from './migrations/problem-config-default-language';
 import { applyAnalyticsOptimizationIndexesMigration } from './migrations/analytics-optimization-indexes';
+import { applyLabsSchemaMigration } from './migrations/labs-schema';
 
 export function practiceSubmissionMigrationOptions(): DataSourceOptions {
   const postgres = databaseConfig().postgres;
@@ -74,6 +75,7 @@ export async function runPracticeSubmissionSourceMigration(): Promise<void> {
         await applyLearningModuleMigration(queryRunner);
         await applyProblemConfigDefaultLanguageMigration(queryRunner);
         await applyAnalyticsOptimizationIndexesMigration(queryRunner);
+        await applyLabsSchemaMigration(queryRunner);
         await queryRunner.commitTransaction();
       } catch (error) {
         await queryRunner.rollbackTransaction();

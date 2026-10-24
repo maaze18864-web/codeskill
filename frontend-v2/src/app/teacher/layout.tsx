@@ -45,6 +45,11 @@ export default function TeacherLayout({ children }: { children: React.ReactNode 
   const authenticatedUser = user!;
   const userName = authenticatedUser.name?.trim() || "Teacher";
   const initial = userName.charAt(0).toUpperCase();
+  const isLabWorkspace = Boolean(pathname?.match(/\/teacher\/labs\/[^/]+\/experiments\/[^/]+$/));
+
+  if (isLabWorkspace) {
+    return <div className="h-screen overflow-hidden bg-background">{children}</div>;
+  }
 
   return (
     <div className="admin-shell flex h-screen overflow-hidden bg-background font-sans">

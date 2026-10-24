@@ -80,7 +80,14 @@ export function Navbar() {
 
   const isAuthPage = pathname === "/login" || pathname === "/register";
   const isPortalPage = pathname ? pathname.startsWith("/admin") || pathname.startsWith("/teacher") : false;
-  const isWorkspacePage = pathname ? pathname.match(/^\/(problems|contest)\/[^/]+$/) : false;
+  const isWorkspacePage = pathname
+    ? Boolean(
+        pathname.match(/^\/(problems|contest)\/[^/]+$/) ||
+          pathname.match(/^\/projects\/[^/]+$/) ||
+          pathname.match(/^\/labs\/[^/]+\/experiments\/[^/]+(?:\/practice\/[^/]+)?$/) ||
+          pathname.match(/^\/teacher\/labs\/[^/]+\/experiments\/[^/]+(?:\/practice\/[^/]+)?$/),
+      )
+    : false;
   const isExamTakingPage = pathname ? (pathname.includes("/take") || pathname.endsWith("/attempt")) : false;
 
   if (!mounted || isAuthPage || isPortalPage || isWorkspacePage || isExamTakingPage) {
@@ -97,6 +104,7 @@ export function Navbar() {
   const navLinks = [
     { name: "Learning", href: "/learning", icon: Compass },
     { name: "Problems", href: "/problems", icon: Code2 },
+    { name: "Labs", href: "/labs", icon: ClipboardList },
     { name: "Assessments", href: "/assessments", icon: ClipboardList },
     { name: "Contests", href: "/contests", icon: Trophy },
     { name: "Leaderboard", href: "/leaderboard", icon: BarChart3 },

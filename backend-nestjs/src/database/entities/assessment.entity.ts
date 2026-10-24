@@ -19,6 +19,11 @@ import { User } from './user.entity';
 @Index(['targetSemesters'])
 @Index(['targetSections'])
 export class Assessment {
+  @Column({ type: 'uuid', nullable: true })
+  labExperimentId?: string | null;
+
+  @Column({ type: 'float', nullable: true })
+  labMaxScore?: number | null;
   @PrimaryGeneratedColumn('uuid')
   id: string;
 

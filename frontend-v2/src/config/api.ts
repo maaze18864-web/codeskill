@@ -91,6 +91,7 @@ api.interceptors.response.use(
     return res;
   },
   async (error) => {
+    if (error.code === "ERR_CANCELED") return Promise.reject(error);
     const requestId =
       error.response?.headers?.["x-request-id"] ||
       error.config?.headers?.["x-request-id"] ||
@@ -662,6 +663,7 @@ export const adminBugsAPI = {
 };
 
 export const studentAssessmentsAPI = {
+  runSql: (id:string,data:{questionId:string;code:string;language:string}) => api.post<import('@/lib/sql-workspace').SqlFeedback>(`/assessments/${id}/run-sql`,data),
   evaluateCode: (id: string, data: { questionId: string; code: string; language: string }) => awaitExecution(
     () => api.post(`/assessments/${id}/evaluate-code`, data), jobId => runAPI.getJob(jobId),
   ),
@@ -768,4 +770,106 @@ export const certificateVerificationAPI = {
   verify: (credentialId: string) => api.get(`/certificates/verify/${credentialId}`),
 };
 
+export const adminLabsAPI = {
+  saveSqlProblem: (labId:string,experimentId:string,data:{problem:import('@/lib/sql-workspace').SqlProblemInput;maxScore:number},problemId?:string) => problemId ? api.put(`/admin/labs/${labId}/experiments/${experimentId}/sql-problems/${problemId}`,data) : api.post(`/admin/labs/${labId}/experiments/${experimentId}/sql-problems`,data),
+  practiceMarks: (labId:string,experimentId:string,problemId:string,maxScore:number)=>api.put(`/admin/labs/${labId}/experiments/${experimentId}/problems/${problemId}/marks`,{maxScore}),
+  assessmentMarks: (labId:string,experimentId:string,assessmentId:string,maxScore:number)=>api.put(`/admin/labs/${labId}/experiments/${experimentId}/assessments/${assessmentId}/marks`,{maxScore}),
+  dashboard: (filters?: {sectionId?: string; labId?: string}) => api.get("/admin/labs/dashboard", {params: filters}),
+  listTeachers: () => api.get("/admin/labs/teachers"),
+  listSections: () => api.get("/admin/labs/sections"),
+  getSection: (id: string) => api.get(`/admin/labs/sections/${id}`),
+  createSection: (data: any) => api.post("/admin/labs/sections", data),
+  updateSection: (id: string, data: any) => api.put(`/admin/labs/sections/${id}`, data),
+  deleteSection: (id: string) => api.delete(`/admin/labs/sections/${id}`),
+  addSubgroup: (sectionId: string, data: { code: string; name?: string }) =>
+    api.post(`/admin/labs/sections/${sectionId}/subgroups`, data),
+  deleteSubgroup: (sectionId: string, subgroupId: string) =>
+    api.delete(`/admin/labs/sections/${sectionId}/subgroups/${subgroupId}`),
+  listEnrollments: (sectionId: string) =>
+    api.get(`/admin/labs/sections/${sectionId}/enrollments`),
+  enrollStudents: (sectionId: string, data: { studentIds: string[]; subgroupId?: string }) =>
+    api.post(`/admin/labs/sections/${sectionId}/enrollments`, data),
+  removeEnrollment: (sectionId: string, enrollmentId: string) =>
+    api.delete(`/admin/labs/sections/${sectionId}/enrollments/${enrollmentId}`),
+  listLabs: () => api.get("/admin/labs"),
+  getLab: (id: string) => api.get(`/admin/labs/${id}`),
+  createLab: (data: any) => api.post("/admin/labs", data),
+  updateLab: (id: string, data: any) => api.put(`/admin/labs/${id}`, data),
+  deleteLab: (id: string) => api.delete(`/admin/labs/${id}`),
+  assignSections: (labId: string, sectionIds: string[]) =>
+    api.post(`/admin/labs/${labId}/sections`, { sectionIds }),
+  unassignSection: (labId: string, sectionId: string) =>
+    api.delete(`/admin/labs/${labId}/sections/${sectionId}`),
+  assignTeacher: (labId: string, data: { sectionId: string; teacherId: string; role?: string }) =>
+    api.post(`/admin/labs/${labId}/teachers`, data),
+  removeTeacher: (labId: string, assignmentId: string) =>
+    api.delete(`/admin/labs/${labId}/teachers/${assignmentId}`),
+  createExperiment: (labId: string, data: any) =>
+    api.post(`/admin/labs/${labId}/experiments`, data),
+  updateExperiment: (labId: string, experimentId: string, data: any) =>
+    api.put(`/admin/labs/${labId}/experiments/${experimentId}`, data),
+  deleteExperiment: (labId: string, experimentId: string) =>
+    api.delete(`/admin/labs/${labId}/experiments/${experimentId}`),
+  attachProblem: (labId: string, experimentId: string, data: any) =>
+    api.post(`/admin/labs/${labId}/experiments/${experimentId}/problems`, data),
+  saveProjectProblem: (labId: string, experimentId: string, data: import('@/lib/labs-types').LabProjectTemplate, problemId?: string) =>
+    problemId ? api.put(`/admin/labs/${labId}/experiments/${experimentId}/project-problems/${problemId}`, data) : api.post(`/admin/labs/${labId}/experiments/${experimentId}/project-problems`, data),
+  detachProblem: (labId: string, experimentId: string, problemLinkId: string) =>
+    api.delete(`/admin/labs/${labId}/experiments/${experimentId}/problems/${problemLinkId}`),
+  metrics: (labId: string, sectionId?: string) =>
+    api.get(`/admin/labs/${labId}/metrics`, { params: { sectionId } }),
+};
+
+export const teacherLabsAPI = {
+  dashboard: (sectionId?: string, labId?: string) => api.get("/teacher/labs/dashboard", { params: { sectionId, labId } }),
+  list: () => api.get("/teacher/labs"),
+  metrics: (labId: string, sectionId?: string) =>
+    api.get(`/teacher/labs/${labId}/metrics`, { params: { sectionId } }),
+  experiments: (labId: string) => api.get(`/teacher/labs/${labId}/experiments`),
+  workspace: (labId: string, experimentId: string) =>
+    api.get(`/teacher/labs/${labId}/experiments/${experimentId}`),
+};
+
+export const studentLabsAPI = {
+  executeSql: (labId:string,experimentId:string,problemId:string,code:string,submit:boolean) => api.post<import('@/lib/sql-workspace').SqlFeedback>(`/labs/${labId}/experiments/${experimentId}/sql/${problemId}`,{code,mode:submit?'submit':'run'}),
+  list: () => api.get("/labs"),
+  progress: () => api.get("/labs/progress"),
+  experiments: (labId: string) => api.get(`/labs/${labId}`),
+  workspace: (labId: string, experimentId: string) =>
+    api.get(`/labs/${labId}/experiments/${experimentId}`),
+  recordProgress: (labId: string, data: any) =>
+    api.post(`/labs/${labId}/progress`, data),
+  openProject: (labId: string, experimentId: string, problemId: string) =>
+    api.post(`/labs/${labId}/experiments/${experimentId}/projects/${problemId}`),
+};
+
 export default api;
+
+export const projectsAPI = {
+  catalog: () => api.get('/projects/catalog'),
+  template: (data: {name: string; mode: string; frontendStack?: string; backendStack?: string}) => api.post('/projects/template', data),
+  list: () => api.get('/projects'),
+  create: (data: { name: string; mode: string; frontendStack?: string; backendStack?: string }) => api.post('/projects', data),
+  get: (id: string) => api.get(`/projects/${id}`),
+  save: (id: string, data: { revision: number; files: { path: string; content: string }[]; directories?: string[] }) => api.put(`/projects/${id}`, data),
+  remove: (id: string) => api.delete(`/projects/${id}`),
+  start: (id: string) => api.post(`/projects/${id}/runtime`, undefined, { timeout: 100000 }),
+  status: (id: string) => api.get(`/projects/${id}/runtime`),
+  stop: (id: string) => api.delete(`/projects/${id}/runtime`),
+  sync: (id: string) => api.put(`/projects/${id}/runtime/files`, undefined, { timeout: 90000 }),
+  files: (id: string, since?: string, signal?: AbortSignal) =>
+    api.get<import('@/lib/project-files').ProjectFilesSnapshot>(`/projects/${id}/runtime/files`, { params: { since }, signal }),
+  heartbeat: (id: string) => api.post(`/projects/${id}/runtime/heartbeat`),
+  request: (id: string, data: { method: string; path: string; headers: string; body: string }) => api.post(`/projects/${id}/request`, data, { timeout: 25000 }),
+  command: (id: string, command: string) => api.post(`/projects/${id}/command`, { command }, { timeout: 25000 }),
+  startTerminal: (id: string, size: { cols: number; rows: number }, signal?: AbortSignal) =>
+    api.post<import('@/lib/project-workspace').ProjectTerminalSession>(`/projects/${id}/terminal`, size, { signal }),
+  readTerminal: (id: string, terminalId: string, after: number, signal?: AbortSignal) =>
+    api.get<import('@/lib/project-workspace').ProjectTerminalOutput>(`/projects/${id}/terminal/${terminalId}`, { params: { after }, timeout: 22000, signal }),
+  writeTerminal: (id: string, terminalId: string, data: string, signal?: AbortSignal) =>
+    api.post(`/projects/${id}/terminal/${terminalId}/input`, { data }, { signal }),
+  resizeTerminal: (id: string, terminalId: string, size: { cols: number; rows: number }, signal?: AbortSignal) =>
+    api.put(`/projects/${id}/terminal/${terminalId}/size`, size, { signal }),
+  closeTerminal: (id: string, terminalId: string) =>
+    api.delete(`/projects/${id}/terminal/${terminalId}`),
+};

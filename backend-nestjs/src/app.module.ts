@@ -54,6 +54,8 @@ import { ExamSecurityModule } from './exam-security/exam-security.module';
 import { ObservabilityModule } from './observability/observability.module';
 import { BugsModule } from './bugs/bugs.module';
 import { LearningModule } from './learning/learning.module';
+import { LabsModule } from './labs/labs.module';
+import { ProjectsModule } from './projects/projects.module';
 
 @Module({
   imports: [
@@ -147,6 +149,8 @@ import { LearningModule } from './learning/learning.module';
     AnalyticsModule,
     ReportsModule,
     BugsModule,
+    LabsModule,
+    ProjectsModule,
     PetModule,
     LearningModule,
     ThrottlerModule.forRootAsync({

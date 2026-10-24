@@ -11,10 +11,12 @@ import { AssessmentsStudentController } from './assessments-student.controller';
 
 import { ExecutionModule } from '../execution/execution.module';
 import { S3Module } from '../s3/s3.module';
+import { SqlModule } from '../sql/sql.module';
 
 @Module({
   imports: [
     ExecutionModule,
+    SqlModule,
     BullModule.registerQueue({ name: 'submissions' }),
     S3Module,
     TypeOrmModule.forFeature([

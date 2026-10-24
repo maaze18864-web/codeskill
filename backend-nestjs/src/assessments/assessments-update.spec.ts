@@ -66,6 +66,16 @@ function setup() {
 }
 
 describe('assessment update persistence', () => {
+  it('keeps experiment assessments multi-question when edited', async () => {
+    const { service, assessment, assessmentRepo } = setup();
+    assessment.labExperimentId = 'experiment';
+    assessment.questions = ['question-1', 'question-2'];
+    await expect(service.update('assessment-1', {
+      sections: [{ title: 'SQL', questions: [{ questionId: 'question-1', marks: 5 }] }],
+    }, {})).rejects.toThrow('at least two questions');
+    expect(assessmentRepo.save).not.toHaveBeenCalled();
+  });
+
   it('applies partial updates while retaining omitted fields and nested proctoring values', async () => {
     const { service, assessment } = setup();
 

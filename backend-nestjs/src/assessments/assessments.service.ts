@@ -28,6 +28,8 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { EvaluateAssessmentCodeDto } from './dto/evaluate-code.dto';
 import { normalizeSectionIdentifier } from '../common/constants/sections.constant';
+import { SqlEngineService } from '../sql/sql-engine.service';
+import { publicSqlProblem, validateSqlProblem } from '../sql/sql-problem';
 
 function codingTestCases(question: Question): Array<{ id: string | number; input: string; expected: string; isHidden: boolean }> {
   const cases = question.testCases?.length ? question.testCases : (question.metadata as any)?.testCases || [];
@@ -57,7 +59,50 @@ export class AssessmentsService {
     @Optional()
     private readonly s3Service?: S3Service,
     @Optional() @InjectQueue('submissions') private readonly codeQueue?: Queue,
+    @Optional() private readonly sqlEngine?: SqlEngineService,
   ) {}
+
+  private async hasLabAccess(assessment: Assessment, studentId: string) {
+    if (!assessment.labExperimentId) return true;
+    const [row] = await this.assessmentRepo.query(
+      `SELECT EXISTS(
+        SELECT 1 FROM lab_experiments e
+        JOIN labs l ON l.id=e.lab_id
+        JOIN lab_section_assignments a ON a.lab_id=l.id
+        JOIN lab_sections s ON s.id=a.lab_section_id AND s."isActive"=true
+        JOIN lab_section_enrollments en ON en.lab_section_id=s.id AND en.status='active'
+        WHERE e.id=$1 AND en.student_id=$2 AND e."isPublished"=true AND l.status='published'
+      ) AS allowed`,
+      [assessment.labExperimentId, studentId],
+    );
+    return row?.allowed === true;
+  }
+  private async findStudentAssessment(id: string, student: any) {
+    const assessment = await this.findAssessmentByIdOrCode(id);
+    if (
+      assessment &&
+      !(await this.hasLabAccess(assessment, String(student.id || student._id)))
+    ) {
+      throw new ForbiddenException(
+        'This experiment assessment is not available for your lab section.',
+      );
+    }
+    return assessment;
+  }
+  private assessmentQuestion(assessment: Assessment, question: Question): Question {
+    const config = assessment.sections
+      ?.flatMap((section) => section.questions)
+      .find((entry) =>
+        String(entry.questionId) === question.id ||
+        String(entry.questionId) === question.mongoId,
+      );
+    return config
+      ? Object.assign(new Question(), question, {
+          marks: config.marks ?? question.marks,
+          negativeMarks: config.negativeMarks ?? question.negativeMarks,
+        })
+      : question;
+  }
 
   private attemptExpiresAt(assessment: Assessment, attempt: AssessmentAttempt): Date {
     const durationMinutes = Number(assessment.durationMinutes) > 0
@@ -325,6 +370,12 @@ export class AssessmentsService {
     ip = '',
     userAgent = '',
   ) {
+    if (dto.labExperimentId) {
+      const [experiment] = await this.assessmentRepo.query(
+        'SELECT id FROM lab_experiments WHERE id=$1', [dto.labExperimentId],
+      );
+      if (!experiment) throw new BadRequestException('Lab experiment not found');
+    }
     let questionObjIds: string[] = [];
     let totalMarks = 0;
     const sectionsToSave: any[] = [];
@@ -351,7 +402,7 @@ export class AssessmentsService {
             if (question.mongoId) excludedIds.add(String(question.mongoId));
             return {
               questionId: String(question.id),
-              marks: question.marks || 1,
+              marks: question.marks ?? 1,
               negativeMarks: question.negativeMarks || 0,
               order: index,
             };
@@ -359,7 +410,7 @@ export class AssessmentsService {
         } else {
           questionsToSave = sec.questions.map((question) => ({
             questionId: String(question.questionId),
-            marks: question.marks || 1,
+            marks: question.marks ?? 1,
             negativeMarks: question.negativeMarks || 0,
             order: question.order || 0,
           }));
@@ -367,7 +418,7 @@ export class AssessmentsService {
 
         questionsToSave.forEach((q) => {
           questionObjIds.push(String(q.questionId));
-          totalMarks += q.marks || 1;
+          totalMarks += q.marks ?? 1;
         });
         sectionsToSave.push({
           title: sec.title,
@@ -383,7 +434,7 @@ export class AssessmentsService {
       const questions = await this.questionRepo.find({
         where: [{ id: In(questionObjIds) }, { mongoId: In(questionObjIds) }],
       });
-      totalMarks = questions.reduce((sum, q) => sum + (q.marks || 1), 0);
+      totalMarks = questions.reduce((sum, q) => sum + (q.marks ?? 1), 0);
     } else {
       throw new BadRequestException(
         'At least one section or question must be provided.',
@@ -391,6 +442,9 @@ export class AssessmentsService {
     }
 
     this.validateNoDuplicateQuestionIds(questionObjIds);
+    if (dto.labExperimentId && questionObjIds.length < 2) {
+      throw new BadRequestException('An experiment assessment requires at least two questions.');
+    }
 
     if (questionObjIds.length > 0) {
       const qCount = await this.questionRepo.count({
@@ -427,6 +481,8 @@ export class AssessmentsService {
       type: dto.type || 'mcq',
       category: dto.category || 'exam',
       durationMinutes: dto.durationMinutes,
+      labExperimentId: dto.labExperimentId || null,
+      labMaxScore: dto.labExperimentId ? dto.labMaxScore ?? totalMarks : null,
       totalMarks,
       passingMarks,
       negativeMarking: dto.negativeMarking ?? true,
@@ -632,6 +688,8 @@ export class AssessmentsService {
     }
 
     if (dto.title !== undefined) assessment.title = dto.title;
+    if (dto.labMaxScore !== undefined && assessment.labExperimentId)
+      assessment.labMaxScore = dto.labMaxScore;
     if (dto.code !== undefined) assessment.code = dto.code.toUpperCase().trim();
     if (dto.description !== undefined) assessment.description = dto.description;
     if (dto.instructions !== undefined) assessment.instructions = dto.instructions;
@@ -761,11 +819,14 @@ export class AssessmentsService {
         throw new BadRequestException('One or more valid questions could not be found.');
       }
       assessment.totalMarks = questionsList.reduce(
-        (sum, q) => sum + (q.marks || 1),
+        (sum, q) => sum + (q.marks ?? 1),
         0,
       );
     }
 
+    if (assessment.labExperimentId && assessment.questions.length < 2) {
+      throw new BadRequestException('An experiment assessment requires at least two questions.');
+    }
     if (assessment.passingMarks < 0 || assessment.passingMarks > assessment.totalMarks) {
       throw new BadRequestException('Passing marks must be between zero and total marks.');
     }
@@ -1115,8 +1176,11 @@ export class AssessmentsService {
       .orderBy('a.createdAt', 'DESC')
       .getMany();
 
-    const filteredAssessments = assessments.filter((a) =>
-      this.isStudentTargeted(a, studentUser, { batch, dept, studentProfile }),
+    const allowedLabs = await Promise.all(assessments.map((assessment) =>
+      this.hasLabAccess(assessment, String(studentUser.id || studentUser._id)),
+    ));
+    const filteredAssessments = assessments.filter((assessment, index) =>
+      allowedLabs[index] && this.isStudentTargeted(assessment, studentUser, { batch, dept, studentProfile }),
     );
 
     const studentId = String(studentUser.id || studentUser._id);
@@ -1223,7 +1287,7 @@ export class AssessmentsService {
   }
 
   async getStudentAssessmentOverview(id: string, studentUser: any) {
-    const assessment = await this.findAssessmentByIdOrCode(id);
+    const assessment = await this.findStudentAssessment(id, studentUser);
     if (!assessment) {
       throw new NotFoundException('Assessment not found');
     }
@@ -1332,7 +1396,7 @@ export class AssessmentsService {
   }
 
   async startStudentAttempt(id: string, studentUser: any) {
-    const assessment = await this.findAssessmentByIdOrCode(id);
+    const assessment = await this.findStudentAssessment(id, studentUser);
     if (!assessment) {
       throw new NotFoundException('Assessment not found');
     }
@@ -1364,7 +1428,7 @@ export class AssessmentsService {
           where: [{ id: In(questionIds) }, { mongoId: In(questionIds) }],
         })
         : [];
-    const qMap = new Map(questionsList.map((q) => [q.id, q]));
+    const qMap = new Map(questionsList.map((q) => [q.id, this.assessmentQuestion(assessment,q)]));
 
     const studentId = String(studentUser.id || studentUser._id);
     let attempt = await this.attemptRepo.findOne({
@@ -1482,7 +1546,7 @@ export class AssessmentsService {
           topic: q.topic,
           subtopic: q.subtopic,
           difficulty: q.difficulty,
-          marks: q.marks || 1,
+          marks: q.marks ?? 1,
           negativeMarks: assessment.negativeMarking ? q.negativeMarks || 0 : 0,
           options: optionOrder ? optionOrder.map((index) => options[index]) : options,
           starterCode: Array.isArray(q.starterCode)
@@ -1490,6 +1554,9 @@ export class AssessmentsService {
             : (q.metadata as any)?.starterCode || [],
           codeSnippet: q.codeSnippet,
           language: q.language || 'python',
+          sql: q.language === 'sql' && q.metadata?.sqlProblem
+            ? publicSqlProblem(validateSqlProblem(q.metadata.sqlProblem))
+            : undefined,
           constraints:
             Array.isArray(q.constraints) && q.constraints.length > 0
               ? q.constraints
@@ -1531,7 +1598,7 @@ export class AssessmentsService {
 
   async retakeStudentAttempt(id: string, studentUser: any) {
     const studentId = String(studentUser.id || studentUser._id);
-    const assessment = await this.findAssessmentByIdOrCode(id);
+    const assessment = await this.findStudentAssessment(id, studentUser);
     if (!assessment) {
       throw new NotFoundException('Assessment not found');
     }
@@ -1549,9 +1616,9 @@ export class AssessmentsService {
     return this.startStudentAttempt(assessment.id, studentUser);
   }
 
-  async evaluateCode(id: string, dto: EvaluateAssessmentCodeDto, studentUser: any) {
+  async evaluateCode(id: string, dto: EvaluateAssessmentCodeDto, studentUser: any, samplesOnly=false) {
     const studentId = String(studentUser.id || studentUser._id);
-    const assessment = await this.findAssessmentByIdOrCode(id);
+    const assessment = await this.findStudentAssessment(id, studentUser);
     if (!assessment) throw new NotFoundException('Assessment not found');
     if (!['published', 'ongoing'].includes(assessment.status)) throw new ForbiddenException('Assessment is not open for code evaluation');
     if (!this.isStudentTargeted(assessment, studentUser)) throw new ForbiddenException('Assessment is not assigned to you');
@@ -1567,6 +1634,14 @@ export class AssessmentsService {
     const question = await this.questionRepo.findOne({ where: { id: dto.questionId } });
     if (!question || !['coding', 'dsa', 'algorithmic'].includes(question.questionType.toLowerCase()))
       throw new BadRequestException('Coding question not found');
+    if (question.language === 'sql' && question.metadata?.sqlProblem) {
+      if (dto.language !== 'sql') throw new BadRequestException('Use SQL for this question');
+      if (!this.sqlEngine) throw new ServiceUnavailableException('SQL engine unavailable');
+      return this.sqlEngine.evaluate(
+        validateSqlProblem(question.metadata.sqlProblem), dto.code, !samplesOnly,
+        `interactive:${studentId}`,
+      );
+    }
     const language = canonicalLanguage(dto.language);
     if (!language || (question.supportedLanguages?.length && !question.supportedLanguages.some(value => canonicalLanguage(value) === language)))
       throw new BadRequestException('This language is not enabled for the assessment question');
@@ -1613,7 +1688,7 @@ export class AssessmentsService {
 
   async saveProgress(id: string, dto: SubmitAssessmentDto, studentUser: any) {
     const studentId = String(studentUser.id || studentUser._id);
-    const assessment = await this.findAssessmentByIdOrCode(id);
+    const assessment = await this.findStudentAssessment(id, studentUser);
     if (!assessment) {
       throw new NotFoundException('Assessment not found');
     }
@@ -1788,7 +1863,7 @@ export class AssessmentsService {
     dto: SubmitAssessmentDto,
     studentUser: any,
   ) {
-    const assessment = await this.findAssessmentByIdOrCode(id);
+    const assessment = await this.findStudentAssessment(id, studentUser);
     if (!assessment) {
       throw new NotFoundException('Assessment not found');
     }
@@ -1887,7 +1962,7 @@ export class AssessmentsService {
           where: [{ id: In(questionIds) }, { mongoId: In(questionIds) }],
         })
         : [];
-    const questionMap = new Map(questions.map((q) => [q.id, q]));
+    const questionMap = new Map(questions.map((q) => [q.id, this.assessmentQuestion(assessment,q)]));
 
     const seenQuestionIds = new Set<string>();
     for (const r of dto.responses || []) {
@@ -1900,6 +1975,7 @@ export class AssessmentsService {
       seenQuestionIds.add(qId);
     }
 
+    let sqlGrading: Promise<unknown> = Promise.resolve();
     const evaluatedResponses = await Promise.all(
       (dto.responses || []).map(async (r) => {
         const qId = String(r.questionId);
@@ -1941,6 +2017,21 @@ export class AssessmentsService {
           if (hasCode) {
             isAttempted = true;
 
+            const sqlProblem = q.language === 'sql' && q.metadata?.sqlProblem
+              ? validateSqlProblem(q.metadata.sqlProblem) : null;
+            if (sqlProblem) {
+              if (r.language !== 'sql' || !this.sqlEngine) {
+                throw new BadRequestException('SQL execution is unavailable or the language is invalid');
+              }
+              // Serialize this attempt's SQL questions to respect the engine's bounded queue.
+              const grade = sqlGrading.then(() => this.sqlEngine!.evaluate(
+                sqlProblem, r.code!, true, `grading:${attempt.id}:${q.id}`,
+              ));
+              sqlGrading = grade;
+              const result = await grade;
+              testCasesPassed = result.passedCount;
+              totalTestCases = result.totalCount;
+            } else {
             const submittedLanguage = canonicalLanguage(r.language || 'python');
             if (
               !submittedLanguage ||
@@ -1986,11 +2077,12 @@ export class AssessmentsService {
               testCasesPassed = 0;
             }
 
+            }
             const ratio =
               totalTestCases > 0
                 ? Math.min(1, Math.max(0, testCasesPassed / totalTestCases))
                 : 0;
-            marksAwarded = Math.round(ratio * (q.marks || 5) * 10) / 10;
+            marksAwarded = Math.round(ratio * (q.marks ?? 5) * 10) / 10;
             isCorrect = ratio >= 0.99;
             partialCredit = ratio > 0 && !isCorrect;
           }
@@ -2018,7 +2110,7 @@ export class AssessmentsService {
                 sortedSelected.every((val, idx) => val === sortedCorrect[idx]);
 
               if (isCorrect) {
-                marksAwarded = q.marks || 1;
+                marksAwarded = q.marks ?? 1;
               } else {
                 const negMarks = assessment.negativeMarking
                   ? q.negativeMarks || 0
@@ -2032,7 +2124,7 @@ export class AssessmentsService {
             if (isAttempted) {
               isCorrect = selectedAnswer === q.correctAnswer;
               if (isCorrect) {
-                marksAwarded = q.marks || 1;
+                marksAwarded = q.marks ?? 1;
               } else {
                 const negMarks = assessment.negativeMarking
                   ? q.negativeMarks || 0
@@ -2236,7 +2328,7 @@ export class AssessmentsService {
   }
 
   async getStudentResult(id: string, studentUser: any) {
-    const assessment = await this.findAssessmentByIdOrCode(id);
+    const assessment = await this.findStudentAssessment(id, studentUser);
     if (!assessment) {
       throw new NotFoundException('Assessment not found');
     }
@@ -2267,7 +2359,7 @@ export class AssessmentsService {
           where: [{ id: In(questionIds) }, { mongoId: In(questionIds) }],
         })
         : [];
-    const questionMap = new Map(questions.map((q) => [q.id, q]));
+    const questionMap = new Map(questions.map((q) => [q.id, this.assessmentQuestion(assessment,q)]));
 
     const topicStats: Record<
       string,
@@ -2446,7 +2538,7 @@ export class AssessmentsService {
     studentUser: any,
   ) {
     const studentId = studentUser._id || studentUser.id;
-    const assessment = await this.findAssessmentByIdOrCode(id);
+    const assessment = await this.findStudentAssessment(id, studentUser);
     if (!assessment) throw new NotFoundException('Assessment not found');
     if (!this.isStudentTargeted(assessment, studentUser)) {
       throw new ForbiddenException('Assessment is not assigned to you');
@@ -2486,7 +2578,7 @@ export class AssessmentsService {
     studentUser: any,
   ) {
     const studentId = studentUser._id || studentUser.id;
-    const assessment = await this.findAssessmentByIdOrCode(id);
+    const assessment = await this.findStudentAssessment(id, studentUser);
     if (!assessment) throw new NotFoundException('Assessment not found');
     if (!this.isStudentTargeted(assessment, studentUser)) {
       throw new ForbiddenException('Assessment is not assigned to you');
@@ -2580,7 +2672,7 @@ export class AssessmentsService {
     studentUser: any,
   ) {
     const studentId = studentUser._id || studentUser.id;
-    const assessment = await this.findAssessmentByIdOrCode(id);
+    const assessment = await this.findStudentAssessment(id, studentUser);
     if (!assessment) throw new NotFoundException('Assessment not found');
     if (!this.isStudentTargeted(assessment, studentUser)) {
       throw new ForbiddenException('Assessment is not assigned to you');

@@ -12,7 +12,7 @@ import {
   ThumbsUp, ThumbsDown, ArrowLeft, Hash, Zap, Target, Award, TrendingUp,
   Code2, FileText, User, Check, ArrowRight, Users, Layers
 } from "lucide-react";
-import PracticePet from "@/components/pet/PracticePet";
+// import PracticePet from "@/components/pet/PracticePet"; // TODO: re-enable pet tutor
 import ExecutionFeedback from "@/components/Result/ExecutionFeedback";
 import PracticeConfetti from "@/components/Result/PracticeConfetti";
 import SubmissionDetails from "@/components/Result/SubmissionDetails";
@@ -1422,14 +1422,14 @@ export default function ProblemWorkspace({ params }: { params: Promise<{ id: str
         <PracticeConfetti key={celebrationCount} />
       )}
 
-      <PracticePet
+      {/* <PracticePet
         key={problem.slug}
         problemSlug={problem.slug}
         problemTitle={problem.title}
         code={code}
         language={language}
         workspace
-      />
+      /> // TODO: re-enable pet tutor */}
 
       {/* Login Prompt Modal */}
       <AnimatePresence>

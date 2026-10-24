@@ -102,12 +102,20 @@ export default function DashboardPage() {
               Welcome back, {user?.name || "Student"}. Here&apos;s your assessment overview.
             </p>
           </div>
-          <Link
-            href="/assessments"
-            className="inline-flex items-center justify-center h-9 px-4 rounded-md bg-foreground hover:opacity-90 text-background text-xs font-medium transition-opacity shadow-sm"
-          >
-            View Assessments <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/labs"
+              className="inline-flex items-center justify-center h-9 px-4 rounded-md border border-border bg-card hover:bg-muted text-foreground text-xs font-medium transition-colors shadow-sm"
+            >
+              My Labs <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+            </Link>
+            <Link
+              href="/assessments"
+              className="inline-flex items-center justify-center h-9 px-4 rounded-md bg-foreground hover:opacity-90 text-background text-xs font-medium transition-opacity shadow-sm"
+            >
+              View Assessments <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
+            </Link>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

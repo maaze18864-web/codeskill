@@ -20,6 +20,7 @@ import {
   Bug,
   Compass,
   X,
+  FlaskConical,
 } from "lucide-react";
 import gsap from "gsap";
 
@@ -34,6 +35,16 @@ const adminNavItems = [
     subItems: [
       { name: "Overview", href: "/admin/learning" },
       { name: "Learning Paths", href: "/admin/learning/paths" },
+    ],
+  },
+  {
+    name: "Labs",
+    href: "/admin/labs",
+    icon: FlaskConical,
+    subItems: [
+      { name: "Overview", href: "/admin/labs" },
+      { name: "Sections", href: "/admin/labs/sections" },
+      { name: "Catalog", href: "/admin/labs/catalog" },
     ],
   },
   {
@@ -87,9 +98,13 @@ const adminNavItems = [
   { name: "Settings", href: "/admin/settings", icon: Settings },
 ];
 
-const teacherNavItems = adminNavItems.filter((item) =>
-  !["Companies", "Universities", "Settings", "Bugs"].includes(item.name),
-);
+const teacherNavItems = adminNavItems
+  .filter((item) => !["Companies", "Universities", "Settings", "Bugs"].includes(item.name))
+  .map((item) =>
+    item.name === "Labs"
+      ? { ...item, subItems: undefined }
+      : item,
+  );
 
 interface AdminSidebarProps {
   portal?: "admin" | "teacher";

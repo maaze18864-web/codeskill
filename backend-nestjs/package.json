@@ -40,7 +40,11 @@
     "test:feedback:integration": "ts-node test/submission-feedback.integration.ts",
     "db:bugs:migrate": "ts-node -r tsconfig-paths/register src/database/run-bug-reports-migration.ts",
     "db:learning:migrate": "ts-node -r tsconfig-paths/register src/database/run-learning-module-migration.ts",
-    "seed:learning": "ts-node -r tsconfig-paths/register src/seeds/seed-learning-module.ts"
+    "seed:learning": "ts-node -r tsconfig-paths/register src/seeds/seed-learning-module.ts",
+    "db:labs:migrate": "ts-node -r tsconfig-paths/register src/database/run-labs-schema-migrations.ts",
+    "seed:labs": "ts-node -r tsconfig-paths/register src/seeds/seed-labs-demo.ts",
+    "seed:labs:analytics": "ts-node src/seeds/seed-labs-analytics.ts",
+    "db:projects:migrate": "ts-node src/database/run-project-workspaces-migration.ts"
   },
   "dependencies": {
     "@apollo/server": "^5.5.1",
@@ -92,6 +96,7 @@
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "socket.io": "^4.8.3",
+    "sql.js": "1.15.1",
     "typeorm": "^1.1.1",
     "uuid": "^14.0.3",
     "winston": "^3.19.0",

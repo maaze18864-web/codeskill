@@ -6,7 +6,28 @@ import {
   previewFrameAncestors,
   relativePath,
   requestHeaders,
+  projectRuntimeUrls,
 } from "./runner.mjs";
+test("frontend and backend endpoints use the same isolated runtime gateway", () => {
+  const origin = "https://project.preview.example";
+  const base = `${origin}/p/test/`;
+  assert.deepEqual(projectRuntimeUrls("react", "express", origin, "test"), {
+    previewUrl: base,
+    backendUrl: `${base}__backend/`,
+  });
+  assert.deepEqual(projectRuntimeUrls(null, "springboot", origin, "test"), {
+    previewUrl: null,
+    backendUrl: `${base}__backend/`,
+  });
+  assert.deepEqual(projectRuntimeUrls("react", null, origin, "test"), {
+    previewUrl: base,
+    backendUrl: null,
+  });
+  assert.deepEqual(projectRuntimeUrls("nextjs", null, origin, "test"), {
+    previewUrl: base,
+    backendUrl: base,
+  });
+});
 test("sandboxes have no network, host mounts, credentials, ports, or privileges", () => {
   const args = dockerRunArgs("test", "image:tag");
   for (const value of [

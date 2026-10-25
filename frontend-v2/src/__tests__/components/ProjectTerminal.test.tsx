@@ -58,4 +58,15 @@ describe("Project Bash terminal", () => {
     await act(async () => resolve({ data: { terminalId: "late-shell", alive: true } }));
     expect(projectsAPI.readTerminal).not.toHaveBeenCalled();
   });
+  it("stops input and pending resize requests when Bash exits", async () => {
+    (projectsAPI.readTerminal as jest.Mock).mockResolvedValue({ data: { alive: false, exitCode: 0, cursor: 0, data: "" } });
+    render(<ProjectTerminal id="p" ready />);
+    await waitFor(() => expect(screen.getByText(/Exited/)).toBeInTheDocument());
+    const signal = (projectsAPI.readTerminal as jest.Mock).mock.calls[0][3] as AbortSignal;
+    expect(signal.aborted).toBe(true);
+    expect(mockTerminal.options).toMatchObject({ disableStdin: true });
+    act(() => mockInput("pwd\r"));
+    expect(projectsAPI.writeTerminal).not.toHaveBeenCalled();
+    expect(projectsAPI.resizeTerminal).not.toHaveBeenCalled();
+  });
 });

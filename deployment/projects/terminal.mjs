@@ -20,6 +20,9 @@ export class TerminalSession {
     this.events = [];
     this.bytes = 0;
     this.waiters = new Set();
+    this.startupWaiters = new Set();
+    this.started = false;
+    this.stderr = "";
     this.buffer = "";
     this.child = spawn(command, args, { ...options, stdio: ["pipe", "pipe", "pipe"] });
     this.child.stdout.setEncoding("utf8");
@@ -34,6 +37,7 @@ export class TerminalSession {
           const event = JSON.parse(line);
           if (event.type === "data" && typeof event.data === "string" && event.data.length <= 16384) {
             const data = Buffer.from(event.data, "base64");
+            if (data.length) this.started = true;
             this.events.push({ sequence: ++this.sequence, data });
             this.bytes += data.length;
             while (this.bytes > 262144 || this.events.length > 2048)
@@ -45,15 +49,48 @@ export class TerminalSession {
         } catch { this.close(); }
       }
     });
-    this.child.stderr.resume();
+    this.child.stderr.setEncoding("utf8");
+    this.child.stderr.on("data", (chunk) => {
+      this.stderr = (this.stderr + chunk).slice(0, 4096);
+    });
     this.child.stdin.on("error", () => this.finish(null));
     this.child.on("error", () => this.finish(null));
-    this.child.on("close", () => this.finish(this.exitCode ?? null));
+    this.child.on("close", (code) => this.finish(this.exitCode ?? code));
     this.rateStart = Date.now();
     this.inputBytes = 0;
   }
   describe() {
     return { terminalId: this.id, alive: this.alive, exitCode: this.exitCode ?? null };
+  }
+  startupError() {
+    const missingHelper = this.stderr.includes("/opt/runtime/terminal.py") &&
+      /No such file|not found|can't open file/i.test(this.stderr);
+    return failure(502, missingHelper
+      ? "Bash terminal support is missing from this runtime. Ask an administrator to update it, then restart your project."
+      : "Could not start Bash. Restart the project and try again.");
+  }
+  waitForStart(timeoutMs = 10000) {
+    if (!this.alive) return Promise.reject(this.startupError());
+    if (this.started) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const cleanup = () => {
+        clearTimeout(timer);
+        this.startupWaiters.delete(done);
+      };
+      const done = () => {
+        if (this.alive && !this.started) return;
+        cleanup();
+        if (this.alive) resolve();
+        else reject(this.startupError());
+      };
+      const timer = setTimeout(() => {
+        cleanup();
+        this.close();
+        reject(failure(502, "Bash took too long to start. Restart the project and try again."));
+      }, timeoutMs);
+      this.startupWaiters.add(done);
+      done();
+    });
   }
   send(message) {
     if (!this.alive || this.child.stdin.destroyed)
@@ -109,6 +146,7 @@ export class TerminalSession {
     });
   }
   wake() {
+    for (const done of [...this.startupWaiters]) done();
     for (const done of [...this.waiters]) done();
   }
   finish(exitCode) {

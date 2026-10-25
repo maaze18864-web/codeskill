@@ -5,6 +5,10 @@ import { promisify } from "node:util";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { TerminalSession, terminalSize } from "./terminal.mjs";
+import {
+  instrumentPreviewHtml,
+  previewConsoleScript,
+} from "./preview-console.mjs";
 const exec = promisify(execFile);
 export function dockerRunArgs(name, image, memoryMb = 1024) {
   return [
@@ -56,6 +60,17 @@ export function relativePath(path) {
     !/[\r\n\\]/.test(path)
   );
 }
+export function projectRuntimeUrls(frontend, backend, origin, capability) {
+  const base = `${origin}/p/${capability}/`;
+  return {
+    previewUrl: frontend ? base : null,
+    backendUrl: backend
+      ? `${base}__backend/`
+      : frontend === "nextjs"
+        ? base
+        : null,
+  };
+}
 export function requestHeaders(raw) {
   let input = raw || {};
   if (typeof raw === "string") {
@@ -103,8 +118,7 @@ export function localPreviewPort(start, occupied = [], end = 65535) {
   )
     throw Error("Invalid local preview port range");
   const used = new Set(occupied.filter(Number.isInteger));
-  for (let port = first; port <= last; port++)
-    if (!used.has(port)) return port;
+  for (let port = first; port <= last; port++) if (!used.has(port)) return port;
   throw Error("No local preview ports are available");
 }
 export function previewFrameAncestors(appOrigin, localPreviewOrigins = false) {
@@ -221,7 +235,8 @@ export async function createRunner(env = process.env) {
     env.PROJECT_PREVIEW_ORIGIN || "http://localhost:5081",
   );
   const localPreviewOrigins =
-    previewOrigin.protocol === "http:" && previewOrigin.hostname === "localhost";
+    previewOrigin.protocol === "http:" &&
+    previewOrigin.hostname === "localhost";
   const appOrigin = new URL(env.PROJECT_APP_ORIGIN || "http://127.0.0.1:3000");
   if (
     previewOrigin.origin === appOrigin.origin ||
@@ -276,7 +291,9 @@ export async function createRunner(env = process.env) {
       s.previewServers = [];
       for (const server of servers) server.closeAllConnections?.();
       await Promise.all(
-        servers.map((server) => new Promise((resolve) => server.close(resolve))),
+        servers.map(
+          (server) => new Promise((resolve) => server.close(resolve)),
+        ),
       );
     }
     try {
@@ -293,17 +310,22 @@ export async function createRunner(env = process.env) {
     return url;
   }
   function view(s) {
-    if (!s) return { state: "stopped", logs: [], previewUrl: null };
+    if (!s)
+      return { state: "stopped", logs: [], previewUrl: null, backendUrl: null };
     return {
       state: s.bridge?.closed ? "failed" : s.state,
       logs: s.logs || [],
       memoryMb: s.memoryMb || 1024,
       cpus: s.memoryMb > 1024 ? 2 : 1,
       revision: s.revision || 0,
-      previewUrl:
-        s.frontendStack && s.state === "ready"
-          ? `${previewAddress(s).origin}/p/${s.cap}/`
-          : null,
+      ...(s.state === "ready" && !s.bridge?.closed
+        ? projectRuntimeUrls(
+            s.frontendStack,
+            s.backendStack,
+            previewAddress(s).origin,
+            s.cap,
+          )
+        : { previewUrl: null, backendUrl: null }),
       expiresAt: new Date(
         Math.min(s.started + maxMs, s.touched + idleMs),
       ).toISOString(),
@@ -436,7 +458,7 @@ export async function createRunner(env = process.env) {
               429,
               "Not enough sandbox memory available. Stop another project and try again.",
             );
-          if (localPreviewOrigins && s.frontendStack) await startLocalPreview(s);
+          if (localPreviewOrigins) await startLocalPreview(s);
           await docker(...dockerRunArgs(s.name, image, s.memoryMb));
           if (s.cancelled) throw error(409, "Project start cancelled");
           s.bridge = new Bridge(args, s.name);
@@ -480,28 +502,47 @@ export async function createRunner(env = process.env) {
       if (action === "files" && req.method === "GET") {
         if (s.syncing) throw error(409, "Workspace files are being applied");
         const since = requestUrl.searchParams.get("since") || "";
-        if (since && !/^[a-f0-9]{64}$/.test(since)) throw error(400, "Invalid file fingerprint");
+        if (since && !/^[a-f0-9]{64}$/.test(since))
+          throw error(400, "Invalid file fingerprint");
         return send(200, await s.bridge.call("files", { since }));
       }
       if (action === "terminal") {
-        if (s.syncing) throw error(409, "Wait for workspace files to finish applying");
+        if (s.syncing)
+          throw error(409, "Wait for workspace files to finish applying");
         if (!terminalId && req.method === "POST") {
           const size = terminalSize(await body(req));
           if (!s.terminal?.alive) {
             s.terminal?.close();
             s.terminal = new TerminalSession("docker", [
-              ...args, "exec", "-i", "--workdir", "/work", s.name,
-              "python3", "/opt/runtime/terminal.py",
-              "--cols", String(size.cols), "--rows", String(size.rows),
+              ...args,
+              "exec",
+              "-i",
+              "--workdir",
+              "/work",
+              s.name,
+              "python3",
+              "/opt/runtime/terminal.py",
+              "--cols",
+              String(size.cols),
+              "--rows",
+              String(size.rows),
             ]);
-          } else s.terminal.resize(size);
+          }
+          const terminal = s.terminal;
+          await terminal.waitForStart();
+          terminal.resize(size);
           s.touched = Date.now();
-          return send(200, s.terminal.describe());
+          return send(200, terminal.describe());
         }
         if (!terminalId || s.terminal?.id !== terminalId)
           throw error(404, "Terminal session not found");
         if (!terminalAction && req.method === "GET")
-          return send(200, await s.terminal.read(Number(requestUrl.searchParams.get("after") || 0)));
+          return send(
+            200,
+            await s.terminal.read(
+              Number(requestUrl.searchParams.get("after") || 0),
+            ),
+          );
         if (terminalAction === "input" && req.method === "POST") {
           s.terminal.input((await body(req)).data);
           s.touched = Date.now();
@@ -607,6 +648,14 @@ export async function createRunner(env = process.env) {
         ? tail.slice("/__backend".length) || "/"
         : tail;
       if (!backend && !s.frontendStack) throw error(404, "No frontend");
+      if (req.method === "GET" && tail === "/__codeskill_console.js") {
+        res.writeHead(200, {
+          "Content-Type": "application/javascript; charset=utf-8",
+          "Cache-Control": "no-store",
+          "X-Content-Type-Options": "nosniff",
+        });
+        return res.end(previewConsoleScript(frameAncestors.split(" ")));
+      }
       // Sandboxed frames have an opaque origin. Handle their preflight here so
       // student APIs do not need platform-specific CORS middleware.
       if (
@@ -646,7 +695,7 @@ export async function createRunner(env = process.env) {
       for (const key of Object.keys(previewHeaders))
         if (key === "origin" || key === "referer" || key.startsWith("sec-"))
           delete previewHeaders[key];
-      const response = await s.bridge.call(
+      const projectResponse = await s.bridge.call(
         "request",
         {
           port: backend ? 3001 : 4173,
@@ -665,6 +714,13 @@ export async function createRunner(env = process.env) {
         },
         s.frontendStack === "nextjs" && !backend ? 65000 : 22000,
       );
+      const response =
+        !backend && req.method === "GET"
+          ? instrumentPreviewHtml(
+              projectResponse,
+              `/p/${s.cap}/__codeskill_console.js`,
+            )
+          : projectResponse;
       const headers = {
         "Cache-Control": "no-store",
         "Access-Control-Allow-Origin": runtimeOrigin,

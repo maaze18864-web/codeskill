@@ -40,10 +40,45 @@ export interface ProjectRuntime {
   state: "stopped" | "starting" | "ready" | "failed" | "expired";
   logs: string[];
   previewUrl: string | null;
+  backendUrl?: string | null;
   expiresAt?: string;
   memoryMb?: number;
   cpus?: number;
   revision?: number;
+}
+export function projectBackendUrl(
+  project: Pick<Project, "frontendStack" | "backendStack">,
+  runtime: ProjectRuntime,
+) {
+  if (runtime.state !== "ready") return null;
+  if (runtime.backendUrl !== undefined) return runtime.backendUrl;
+  // Keep existing running controllers compatible while they are being updated.
+  if (!runtime.previewUrl) return null;
+  if (project.backendStack)
+    return new URL("__backend/", runtime.previewUrl).href;
+  return project.frontendStack === "nextjs" ? runtime.previewUrl : null;
+}
+// Framework logs describe the container's loopback listener. Browsers must use
+// the isolated preview proxy; never expose the container's port to the host.
+export function projectPreviewLogs(runtime: ProjectRuntime) {
+  if (runtime.state !== "ready") return runtime.logs;
+  return runtime.logs.map((line) => {
+    let text = line;
+    if (runtime.previewUrl) {
+      const preview = new URL(runtime.previewUrl);
+      for (const host of ["127.0.0.1", "localhost", "[::1]"])
+        text = text.replaceAll(
+          `http://${host}:4173${preview.pathname}`,
+          preview.href,
+        );
+    }
+    if (runtime.backendUrl)
+      text = text.replace(
+        /http:\/\/(?:127\.0\.0\.1|localhost|\[::1\]):3001(?=\/|\s|$)\/?/g,
+        runtime.backendUrl,
+      );
+    return text;
+  });
 }
 export interface ProjectResponse {
   status: number;

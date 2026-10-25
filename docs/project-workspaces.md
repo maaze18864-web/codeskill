@@ -2,6 +2,12 @@
 
 Projects are personal, authenticated workspaces at `/projects`, linked from the student, teacher, and admin Labs dashboards. This feature adds no AWS, Terraform, judge, or CI changes.
 
+The bottom panel has **Server Logs**, **Console**, and **Terminal** tabs. Console captures the embedded frontend's `console.log/info/debug/warn/error`, uncaught errors, failed resources, and unhandled promise rejections. It shows bounded object/Response snapshots with timestamps, level/text filters, and Clear. Messages stay in browser memory (latest 200, rate limited), reset on preview refresh, and are accepted only from the active iframe and its exact origin. The preview gateway inserts the capture script before app scripts without editing saved project files or loosening sandbox policies. Bash and backend output remain in Terminal and Server Logs respectively; the browser Console does not execute JavaScript expressions. Standalone previews keep the browser's normal developer console.
+
+Preview and API Client show a selectable **Backend URL** with Copy and a health-check link. Its `/p/<capability>/__backend/` base forwards any appended path to the project's backend (for example `api/tasks` or `health`). Backend-only workspaces also receive an isolated preview listener. Next.js without a separate backend uses its frontend origin/base for built-in API routes. Port 3001 remains container-only; do not use `http://localhost:3001` in browser code. For Vite frontends use `fetch(import.meta.env.BASE_URL + 'api/tasks')`; for Next.js use `fetch(process.env.NEXT_PUBLIC_PROJECT_BASE + 'api/tasks')`, replacing the example route as needed. Relative requests survive runtime URL changes. Existing `/api/...` gateway routing is preserved.
+
+The embedded frontend stays mounted when switching to API Client or Instructions, so its state, timers, and Console output continue in the background. Only Refresh, Apply, a new runtime, or Stop reloads/removes the preview.
+
 ## Supported stacks
 
 | Part | Choices | Source | Runtime |
@@ -87,7 +93,7 @@ Rollback: stop the project controller to remove disposable containers, remove it
 ## Verification
 
 ```bash
-node --test deployment/projects/runner.test.mjs deployment/projects/terminal.test.mjs deployment/projects/runtime/workspace-files.test.mjs
+node --test deployment/projects/runner.test.mjs deployment/projects/terminal.test.mjs deployment/projects/preview-console.test.mjs deployment/projects/runtime/workspace-files.test.mjs
 (cd backend-nestjs && npm test -- --runInBand --watchman=false --runTestsByPath src/projects/projects.service.spec.ts)
 (cd frontend-v2 && npm test -- --runInBand --watchman=false --runTestsByPath src/lib/project-workspace.test.ts src/lib/project-files.test.ts src/lib/project-download.test.ts src/__tests__/components/ProjectTerminal.test.tsx)
 node scripts/projects/format-smoke.mjs

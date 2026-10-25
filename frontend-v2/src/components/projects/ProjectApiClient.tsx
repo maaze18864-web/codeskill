@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Send } from "lucide-react";
 import { projectsAPI } from "@/config/api";
 import { labsError } from "@/components/labs/LabsUI";
+import { ProjectBackendAddress } from "./ProjectBackendAddress";
 import {
   formatProjectBody,
   type ProjectResponse,
@@ -10,12 +11,18 @@ import {
 export function ProjectApiClient({
   id,
   ready,
+  backendUrl = null,
+  builtinApi = false,
+  frontendStack,
 }: {
   id: string;
   ready: boolean;
+  backendUrl?: string | null;
+  builtinApi?: boolean;
+  frontendStack?: string | null;
 }) {
   const [method, setMethod] = useState("GET"),
-    [path, setPath] = useState("/api/hello"),
+    [path, setPath] = useState(builtinApi ? "/api/hello" : "/health"),
     [headers, setHeaders] = useState('{"Content-Type": "application/json"}'),
     [body, setBody] = useState('{\n  "message": "Hello, API"\n}');
   const [tab, setTab] = useState("body"),
@@ -56,6 +63,11 @@ export function ProjectApiClient({
   }
   return (
     <div className="flex h-full min-h-0 flex-col overflow-auto bg-background">
+      <ProjectBackendAddress
+        url={ready ? backendUrl : null}
+        healthPath={builtinApi ? "api/hello" : "health"}
+        frontendStack={frontendStack}
+      />
       <form onSubmit={send} className="space-y-3 border-b border-border p-4">
         <p className="text-[11px] text-muted-foreground">
           Requests are sent to this project’s API.

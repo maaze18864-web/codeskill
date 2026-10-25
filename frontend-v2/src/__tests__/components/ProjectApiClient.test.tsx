@@ -26,9 +26,13 @@ describe("Project API client", () => {
     await screen.findByText("Status: 200");
     expect(projectsAPI.request).toHaveBeenCalledWith(
       "p",
-      expect.objectContaining({ method: "GET", path: "/api/hello", body: "" }),
+      expect.objectContaining({ method: "GET", path: "/health", body: "" }),
     );
     expect(screen.getByLabelText("API response")).toHaveTextContent("Hello");
+  });
+  it("uses the existing Next.js API example for built-in server routes", () => {
+    render(<ProjectApiClient id="p" ready builtinApi />);
+    expect(screen.getByLabelText("Request path")).toHaveValue("/api/hello");
   });
   it("rejects absolute URLs and malformed headers without making requests", async () => {
     render(<ProjectApiClient id="p" ready />);

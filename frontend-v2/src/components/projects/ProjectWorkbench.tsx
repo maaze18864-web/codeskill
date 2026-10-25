@@ -16,6 +16,7 @@ import {
   Check,
   ClipboardList,
   Download,
+  ExternalLink,
   FileCode2,
   Files,
   Globe,
@@ -38,6 +39,10 @@ import {
   labsPrimary,
 } from "@/components/labs/LabsUI";
 import { ProjectApiClient } from "./ProjectApiClient";
+import { ProjectPreviewFrame } from "./ProjectPreviewFrame";
+import { ProjectBackendAddress } from "./ProjectBackendAddress";
+import { ProjectBrowserConsole } from "./ProjectBrowserConsole";
+import { useProjectConsole } from "@/hooks/useProjectConsole";
 import {
   ProjectExplorer,
   type ExplorerEntry,
@@ -61,6 +66,8 @@ import {
 import { mergeProjectFiles, projectFileHashes } from "@/lib/project-files";
 import {
   projectLanguage,
+  projectBackendUrl,
+  projectPreviewLogs,
   type Project,
   type ProjectFile,
   type ProjectRuntime,
@@ -121,6 +128,12 @@ export function ProjectWorkbench({ id }: { id: string }) {
   } | null>(null);
   const filePoll = useRef<Promise<void> | null>(null);
   const codeEditor = useRef<ProjectCodeEditorHandle | null>(null);
+  const previewFrame = useRef<HTMLIFrameElement | null>(null);
+  const browserConsole = useProjectConsole(
+    previewFrame,
+    runtime.state === "ready" ? runtime.previewUrl : null,
+    previewKey,
+  );
   const filesRef = useRef(files),
     directoriesRef = useRef(directories),
     revision = useRef(1),
@@ -637,6 +650,7 @@ export function ProjectWorkbench({ id }: { id: string }) {
     );
   const current = files.find((f) => f.path === activePath),
     ready = runtime.state === "ready";
+  const backendUrl = projectBackendUrl(project, runtime);
   const runtimeSourceChanged =
     (ready &&
       JSON.stringify(projectDirectories(files, directories)) !==
@@ -923,13 +937,21 @@ export function ProjectWorkbench({ id }: { id: string }) {
               <section className="flex h-[260px] min-h-[160px] max-h-[65vh] shrink-0 resize-y flex-col overflow-hidden border-t border-border bg-card">
                 <div className="flex h-9 shrink-0 items-center justify-between border-b border-border px-3">
                   <div className="flex h-full gap-4">
-                    {["logs", "terminal"].map((t) => (
+                    {[
+                      "logs",
+                      ...(project.frontendStack ? ["console"] : []),
+                      "terminal",
+                    ].map((t) => (
                       <button
                         key={t}
                         onClick={() => setConsoleTab(t)}
                         className={`border-b-2 text-[10px] font-semibold uppercase tracking-wide ${consoleTab === t ? "border-primary" : "border-transparent text-muted-foreground"}`}
                       >
-                        {t === "logs" ? "Server logs" : "Terminal"}
+                        {t === "logs"
+                          ? "Server logs"
+                          : t === "console"
+                            ? "Console"
+                            : "Terminal"}
                       </button>
                     ))}
                   </div>
@@ -943,9 +965,15 @@ export function ProjectWorkbench({ id }: { id: string }) {
                 </div>
                 {consoleTab === "logs" ? (
                   <pre className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words px-4 py-2 font-mono text-[11px] leading-5">
-                    {runtime.logs?.join("\n") ||
+                    {projectPreviewLogs(runtime).join("\n") ||
                       "Run the project to see server output."}
                   </pre>
+                ) : consoleTab === "console" ? (
+                  <ProjectBrowserConsole
+                    entries={browserConsole.entries}
+                    onClear={browserConsole.clear}
+                    ready={ready}
+                  />
                 ) : (
                   <ProjectTerminal
                     key={`${id}:${previewKey}`}
@@ -992,7 +1020,7 @@ export function ProjectWorkbench({ id }: { id: string }) {
                 </button>
               )}
             </div>
-            {outputTab === "instructions" && project.labAssignment ? (
+            {outputTab === "instructions" && project.labAssignment && (
               <div className="min-h-0 flex-1 overflow-auto p-5">
                 <p className="text-[10px] font-semibold uppercase tracking-widest text-primary">
                   Lab project exercise
@@ -1009,9 +1037,13 @@ export function ProjectWorkbench({ id }: { id: string }) {
                   work is independent of the original starter.
                 </p>
               </div>
-            ) : outputTab === "preview" ? (
+            )}
+            {outputTab === "preview" && (
               <>
                 <div className="flex h-10 shrink-0 items-center gap-2 border-b border-border px-3">
+                  <span className="shrink-0 text-[10px] font-semibold text-muted-foreground">
+                    Frontend
+                  </span>
                   <button
                     className={iconButton}
                     aria-label="Refresh preview"
@@ -1020,49 +1052,62 @@ export function ProjectWorkbench({ id }: { id: string }) {
                   >
                     <RefreshCw className="size-3.5" />
                   </button>
-                  <span className="flex-1 truncate rounded border border-border bg-background px-2 py-1 font-mono text-[10px] text-muted-foreground">
-                    {ready ? "project / frontend" : "No running preview"}
+                  <span
+                    className="min-w-0 flex-1 truncate rounded border border-border bg-background px-2 py-1 font-mono text-[10px] text-muted-foreground"
+                    title={ready ? runtime.previewUrl || undefined : undefined}
+                  >
+                    {ready && runtime.previewUrl
+                      ? runtime.previewUrl
+                      : "No running preview"}
                   </span>
+                  {ready && runtime.previewUrl && (
+                    <a
+                      href={runtime.previewUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className={iconButton}
+                      aria-label="Open preview in new tab"
+                      title="Open preview in new tab"
+                    >
+                      <ExternalLink className="size-3.5" />
+                    </a>
+                  )}
                   <span
                     className={`size-1.5 rounded-full ${ready ? "bg-emerald-500" : "bg-muted-foreground/40"}`}
                   />
                 </div>
-                <div className="relative min-h-0 flex-1 bg-background">
-                  {ready && runtime.previewUrl ? (
-                    <iframe
-                      key={previewKey}
-                      src={runtime.previewUrl}
-                      title="Project live preview"
-                      sandbox="allow-scripts allow-same-origin allow-forms allow-modals allow-downloads"
-                      referrerPolicy="no-referrer"
-                      className="h-full w-full border-0 bg-white"
-                    />
-                  ) : (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-8 text-center">
-                      <div className="grid size-12 place-items-center rounded-2xl border border-border bg-card">
-                        {busy ? (
-                          <Loader2 className="size-5 animate-spin text-primary" />
-                        ) : (
-                          <Globe className="size-5 text-muted-foreground" />
-                        )}
-                      </div>
-                      <h2 className="text-sm font-semibold">
-                        {busy
-                          ? "Starting your workspace"
-                          : "Bring your project to life"}
-                      </h2>
-                      <p className="max-w-xs text-xs leading-6 text-muted-foreground">
-                        {busy
-                          ? "Preparing an isolated container and starting your selected stack."
-                          : "Choose Run project to start a live preview beside your code."}
-                      </p>
-                    </div>
-                  )}
-                </div>
+                {(project.backendStack ||
+                  project.frontendStack === "nextjs") && (
+                  <ProjectBackendAddress
+                    url={backendUrl}
+                    healthPath={project.backendStack ? "health" : "api/hello"}
+                    frontendStack={project.frontendStack}
+                  />
+                )}
               </>
-            ) : (
+            )}
+            {/* Keep the frontend alive across output tabs so its state and
+                console stream continue while students inspect API responses. */}
+            {project.frontendStack && (
+              <ProjectPreviewFrame
+                frameRef={previewFrame}
+                url={ready ? runtime.previewUrl : null}
+                generation={previewKey}
+                visible={outputTab === "preview"}
+                busy={busy}
+              />
+            )}
+            {outputTab === "api" && (
               <div className="min-h-0 flex-1">
-                <ProjectApiClient id={id} ready={ready} />
+                <ProjectApiClient
+                  id={id}
+                  ready={ready}
+                  backendUrl={backendUrl}
+                  builtinApi={
+                    !project.backendStack && project.frontendStack === "nextjs"
+                  }
+                  frontendStack={project.frontendStack}
+                />
               </div>
             )}
             {ready && runtimeSourceChanged && (

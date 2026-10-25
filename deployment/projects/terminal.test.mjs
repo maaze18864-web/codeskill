@@ -51,3 +51,27 @@ test("PTY dimensions reject impossible terminal sizes", () => {
     assert.throws(() => terminalSize(value));
   assert.deepEqual(terminalSize({ cols: 80, rows: 24 }), { cols: 80, rows: 24 });
 });
+
+test("a shell is ready only after its PTY emits output", async (t) => {
+  const session = new TerminalSession(process.execPath, ["-e", echo]);
+  t.after(() => session.close());
+  await session.waitForStart();
+  assert.equal(session.describe().alive, true);
+  assert.equal(Buffer.from(session.snapshot(0).data, "base64").toString(), "ready");
+});
+
+test("an outdated image reports missing terminal support instead of a connected shell", async (t) => {
+  const session = new TerminalSession(process.execPath, ["-e", `process.stderr.write("python3: can't open file '/opt/runtime/terminal.py': No such file or directory\\n"); process.exitCode=2;`]);
+  t.after(() => session.close());
+  await assert.rejects(session.waitForStart(), (error) => error.status === 502 && /support is missing/.test(error.message));
+  assert.equal(session.describe().alive, false);
+  assert.equal(session.describe().exitCode, 2);
+});
+
+test("a stalled shell startup times out and stops its child process", async (t) => {
+  const session = new TerminalSession(process.execPath, ["-e", "process.stdin.resume();"]);
+  t.after(() => session.close());
+  await assert.rejects(session.waitForStart(30), (error) => error.status === 502 && /too long/.test(error.message));
+  assert.equal(session.describe().alive, false);
+  assert.equal(session.startupWaiters.size, 0);
+});

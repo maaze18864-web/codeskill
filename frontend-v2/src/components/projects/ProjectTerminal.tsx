@@ -103,9 +103,11 @@ export default function ProjectTerminal({ id, ready }: { id: string; ready: bool
           if (bytes.length) await new Promise<void>((resolve) => terminal.write(bytes, resolve));
           cursor = data.cursor;
           if (!data.alive) {
+            connection = null;
             terminal.options.disableStdin = true;
             terminal.write(`\r\n[Shell exited${data.exitCode === null ? "" : `: ${data.exitCode}`} — use Reconnect for a new shell.]\r\n`);
             setState("Exited");
+            abort.abort();
             break;
           }
         }

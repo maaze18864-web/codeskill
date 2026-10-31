@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { LabsAccessGuard } from '../common/guards/labs-access.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { User } from '../database/entities/user.entity';
 import { LabsService } from './labs.service';
@@ -17,7 +18,7 @@ import { Throttle } from '@nestjs/throttler';
 
 @ApiTags('Student Labs')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, LabsAccessGuard)
 @Controller('labs')
 export class LabsStudentController {
   constructor(private readonly labsService: LabsService) {}

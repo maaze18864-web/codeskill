@@ -22,6 +22,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { studentAssessmentsAPI } from "@/config/api";
 import { Spinner } from "@/components/ui/spinner";
+import { hasLabsAccess } from "@/lib/labs-access";
 
 interface Assessment {
   _id: string;
@@ -103,12 +104,12 @@ export default function DashboardPage() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link
+            {hasLabsAccess(user) && <Link
               href="/labs"
               className="inline-flex items-center justify-center h-9 px-4 rounded-md border border-border bg-card hover:bg-muted text-foreground text-xs font-medium transition-colors shadow-sm"
             >
               My Labs <ArrowRight className="w-3.5 h-3.5 ml-1.5" />
-            </Link>
+            </Link>}
             <Link
               href="/assessments"
               className="inline-flex items-center justify-center h-9 px-4 rounded-md bg-foreground hover:opacity-90 text-background text-xs font-medium transition-opacity shadow-sm"

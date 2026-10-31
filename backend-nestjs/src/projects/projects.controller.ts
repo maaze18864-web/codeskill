@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { LabsAccessGuard } from '../common/guards/labs-access.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { User } from '../database/entities/user.entity';
 import {
@@ -28,7 +29,7 @@ import { ProjectsService } from './projects.service';
 import { createProjectTemplate } from './project-catalog';
 
 @Controller('projects')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, LabsAccessGuard)
 export class ProjectsController {
   constructor(private readonly projects: ProjectsService) {}
   @Get('catalog') catalog() {

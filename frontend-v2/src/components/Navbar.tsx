@@ -21,6 +21,7 @@ import {
   Compass,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { hasLabsAccess } from "@/lib/labs-access";
 
 export function Navbar() {
   const pathname = usePathname();
@@ -109,7 +110,7 @@ export function Navbar() {
     { name: "Contests", href: "/contests", icon: Trophy },
     { name: "Leaderboard", href: "/leaderboard", icon: BarChart3 },
     { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  ];
+  ].filter((item) => item.href !== "/labs" || hasLabsAccess(user));
 
   return (
     <>

@@ -1,6 +1,7 @@
 import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { LabsAccessGuard } from '../common/guards/labs-access.guard';
 import { TeacherGuard } from '../common/guards/admin.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { User } from '../database/entities/user.entity';
@@ -9,7 +10,7 @@ import { LabsDashboardQueryDto } from './dto/labs-dashboard-query.dto';
 
 @ApiTags('Teacher Labs')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, TeacherGuard)
+@UseGuards(JwtAuthGuard, TeacherGuard, LabsAccessGuard)
 @Controller('teacher/labs')
 export class LabsTeacherController {
   constructor(private readonly labsService: LabsService) {}

@@ -30,6 +30,8 @@ import { EvaluateAssessmentCodeDto } from './dto/evaluate-code.dto';
 import { normalizeSectionIdentifier } from '../common/constants/sections.constant';
 import { SqlEngineService } from '../sql/sql-engine.service';
 import { publicSqlProblem, validateSqlProblem } from '../sql/sql-problem';
+import { canAccessLabs } from '../common/access/labs-access';
+import { User } from '../database/entities/user.entity';
 
 function codingTestCases(question: Question): Array<{ id: string | number; input: string; expected: string; isHidden: boolean }> {
   const cases = question.testCases?.length ? question.testCases : (question.metadata as any)?.testCases || [];
@@ -62,7 +64,7 @@ export class AssessmentsService {
     @Optional() private readonly sqlEngine?: SqlEngineService,
   ) {}
 
-  private async hasLabAccess(assessment: Assessment, studentId: string) {
+  private async hasLabAccess(assessment: Assessment, student: Partial<User> & { _id?: string }) {
     if (!assessment.labExperimentId) return true;
     const [row] = await this.assessmentRepo.query(
       `SELECT EXISTS(
@@ -73,15 +75,15 @@ export class AssessmentsService {
         JOIN lab_section_enrollments en ON en.lab_section_id=s.id AND en.status='active'
         WHERE e.id=$1 AND en.student_id=$2 AND e."isPublished"=true AND l.status='published'
       ) AS allowed`,
-      [assessment.labExperimentId, studentId],
+      [assessment.labExperimentId, String(student.id || student._id)],
     );
-    return row?.allowed === true;
+    return canAccessLabs(student) && row?.allowed === true;
   }
   private async findStudentAssessment(id: string, student: any) {
     const assessment = await this.findAssessmentByIdOrCode(id);
     if (
       assessment &&
-      !(await this.hasLabAccess(assessment, String(student.id || student._id)))
+      !(await this.hasLabAccess(assessment, student))
     ) {
       throw new ForbiddenException(
         'This experiment assessment is not available for your lab section.',
@@ -1177,7 +1179,7 @@ export class AssessmentsService {
       .getMany();
 
     const allowedLabs = await Promise.all(assessments.map((assessment) =>
-      this.hasLabAccess(assessment, String(studentUser.id || studentUser._id)),
+      this.hasLabAccess(assessment, studentUser),
     ));
     const filteredAssessments = assessments.filter((assessment, index) =>
       allowedLabs[index] && this.isStudentTargeted(assessment, studentUser, { batch, dept, studentProfile }),

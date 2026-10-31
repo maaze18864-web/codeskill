@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { LabsAccessGuard } from '../common/guards/labs-access.guard';
 import { AdminGuard } from '../common/guards/admin.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { User } from '../database/entities/user.entity';
@@ -35,7 +36,7 @@ import {
 
 @ApiTags('Admin Labs')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, AdminGuard)
+@UseGuards(JwtAuthGuard, AdminGuard, LabsAccessGuard)
 @Controller('admin/labs')
 export class LabsAdminController {
   constructor(private readonly labsService: LabsService) {}

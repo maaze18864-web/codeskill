@@ -14,6 +14,7 @@ import { OtpService } from '../redis/otp.service';
 import { TokenService } from './token.service';
 import { LoginThrottleService } from './login-throttle.service';
 import { validatePasswordPolicy } from './password.util';
+import { canAccessLabs } from '../common/access/labs-access';
 import { OAuth2Client } from 'google-auth-library';
 import axios from 'axios';
 import {
@@ -67,6 +68,7 @@ export class AuthService {
         email: user.email,
         role: user.role || (user.isAdmin ? 'admin' : 'student'),
         isAdmin: user.isAdmin,
+        features: { labs: canAccessLabs(user) },
         uid: user.uid || null,
         isAssessmentStudent: user.isAssessmentStudent || false,
         forcePasswordChange: user.forcePasswordChange || false,
@@ -585,6 +587,7 @@ export class AuthService {
         email: rotated.user.email,
         role: rotated.user.role || (rotated.user.isAdmin ? 'admin' : 'student'),
         isAdmin: rotated.user.isAdmin,
+        features: { labs: canAccessLabs(rotated.user) },
       },
     };
   }
@@ -609,7 +612,7 @@ export class AuthService {
   async getMe(userId: string) {
     const user = await this.userRepository.findOne({ where: { id: userId } });
     if (!user) throw new UnauthorizedException('User not found');
-    return user;
+    return Object.assign(user, { features: { labs: canAccessLabs(user) } });
   }
 
   async updateProfile(userId: string, data: any) {
@@ -657,7 +660,8 @@ export class AuthService {
       user.username = data.username;
     }
 
-    return await this.userRepository.save(user);
+    const saved = await this.userRepository.save(user);
+    return Object.assign(saved, { features: { labs: canAccessLabs(saved) } });
   }
 
   async forgotPassword(dto: ForgotPasswordDto) {
@@ -765,6 +769,7 @@ export class AuthService {
         uid: user.uid,
         isAssessmentStudent: user.isAssessmentStudent || false,
         forcePasswordChange: false,
+        features: { labs: canAccessLabs(refreshedUser || user) },
       },
     };
   }

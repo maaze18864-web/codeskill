@@ -110,6 +110,8 @@ export class User {
     preferredLanguage?: string;
     theme?: string;
     fontSize?: number;
+    // Managed only by the Labs access CLI, never by the profile API.
+    labsAccessDisabled?: boolean;
   };
 
   // Stats

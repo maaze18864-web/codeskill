@@ -23,6 +23,8 @@ import {
   FlaskConical,
 } from "lucide-react";
 import gsap from "gsap";
+import { useAuth } from "@/context/AuthContext";
+import { hasLabsAccess } from "@/lib/labs-access";
 
 const adminNavItems = [
   { name: "Home", href: "/", icon: Home },
@@ -118,7 +120,9 @@ export function AdminSidebar({
   onMobileClose,
 }: AdminSidebarProps) {
   const pathname = usePathname();
-  const navItems = portal === "teacher" ? teacherNavItems : adminNavItems;
+  const { user } = useAuth();
+  const navItems = (portal === "teacher" ? teacherNavItems : adminNavItems)
+    .filter((item) => item.name !== "Labs" || hasLabsAccess(user));
   const isTeacher = portal === "teacher";
 
   const renderSidebarContent = (isMobileView = false) => (

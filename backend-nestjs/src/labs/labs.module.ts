@@ -21,6 +21,7 @@ import { Question } from '../database/entities/question.entity';
 import { AssessmentAttempt } from '../database/entities/assessment-attempt.entity';
 import { SqlModule } from '../sql/sql.module';
 import { SubmissionShardingModule } from '../database/sharding/sharding.module';
+import { LabsAccessGuard } from '../common/guards/labs-access.guard';
 
 @Module({
   imports: [
@@ -49,7 +50,7 @@ import { SubmissionShardingModule } from '../database/sharding/sharding.module';
     LabsTeacherController,
     LabsStudentController,
   ],
-  providers: [LabsService],
+  providers: [LabsService, LabsAccessGuard],
   exports: [LabsService],
 })
 export class LabsModule {}

@@ -42,6 +42,7 @@
     "db:learning:migrate": "ts-node -r tsconfig-paths/register src/database/run-learning-module-migration.ts",
     "seed:learning": "ts-node -r tsconfig-paths/register src/seeds/seed-learning-module.ts",
     "db:labs:migrate": "ts-node -r tsconfig-paths/register src/database/run-labs-schema-migrations.ts",
+    "labs:access": "ts-node src/database/manage-labs-access.ts",
     "seed:labs": "ts-node -r tsconfig-paths/register src/seeds/seed-labs-demo.ts",
     "seed:labs:analytics": "ts-node src/seeds/seed-labs-analytics.ts",
     "db:projects:migrate": "ts-node src/database/run-project-workspaces-migration.ts"

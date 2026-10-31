@@ -9,6 +9,7 @@ interface User {
   email: string;
   role: string;
   isAdmin?: boolean;
+  features?: { labs?: boolean };
   [key: string]: any;
 }
 
